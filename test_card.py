@@ -106,3 +106,13 @@ class TestGenerateUniqueCards:
     def test_single_card(self):
         cards = generate_unique_cards(1)
         assert len(cards) == 1
+
+    def test_large_batch_all_unique(self):
+        """Generate 50 cards and verify every pair is unique by number set."""
+        cards = generate_unique_cards(50)
+        card_sets = [
+            frozenset(cell for row in card for cell in row if cell is not None)
+            for card in cards
+        ]
+        assert len(card_sets) == 50
+        assert len(set(card_sets)) == 50
