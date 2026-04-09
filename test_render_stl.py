@@ -6,6 +6,7 @@ import tempfile
 import cadquery as cq
 
 from card import generate_card, generate_unique_cards
+from registry import card_id
 from render_stl import _build_base, _build_overlay, render_stl
 
 # Tolerances for geometry checks (mm)
@@ -64,31 +65,37 @@ class TestBuildOverlay:
 
 
 class TestRenderStl:
+    def _numbered(self, cards):
+        return [(i + 1, c) for i, c in enumerate(cards)]
+
     def test_creates_two_files_per_card(self):
         cards = generate_unique_cards(2)
+        cid0, cid1 = card_id(cards[0]), card_id(cards[1])
         with tempfile.TemporaryDirectory() as tmpdir:
-            render_stl(cards, tmpdir)
+            render_stl(self._numbered(cards), tmpdir)
             files = sorted(os.listdir(tmpdir))
             assert files == [
-                "card_01_base.stl",
-                "card_01_overlay.stl",
-                "card_02_base.stl",
-                "card_02_overlay.stl",
+                f"card_001_{cid0}_base.stl",
+                f"card_001_{cid0}_overlay.stl",
+                f"card_002_{cid1}_base.stl",
+                f"card_002_{cid1}_overlay.stl",
             ]
 
     def test_stl_files_not_empty(self):
         cards = generate_unique_cards(1)
+        cid = card_id(cards[0])
         with tempfile.TemporaryDirectory() as tmpdir:
-            render_stl(cards, tmpdir)
-            base_path = os.path.join(tmpdir, "card_01_base.stl")
-            overlay_path = os.path.join(tmpdir, "card_01_overlay.stl")
+            render_stl(self._numbered(cards), tmpdir)
+            base_path = os.path.join(tmpdir, f"card_001_{cid}_base.stl")
+            overlay_path = os.path.join(tmpdir, f"card_001_{cid}_overlay.stl")
             assert os.path.getsize(base_path) > 100  # simple box
             assert os.path.getsize(overlay_path) > 1000  # grid + numbers
 
     def test_output_dir_created_if_missing(self):
         cards = generate_unique_cards(1)
+        cid = card_id(cards[0])
         with tempfile.TemporaryDirectory() as tmpdir:
             out = os.path.join(tmpdir, "nested", "output")
-            render_stl(cards, out)
-            assert os.path.exists(os.path.join(out, "card_01_base.stl"))
-            assert os.path.exists(os.path.join(out, "card_01_overlay.stl"))
+            render_stl(self._numbered(cards), out)
+            assert os.path.exists(os.path.join(out, f"card_001_{cid}_base.stl"))
+            assert os.path.exists(os.path.join(out, f"card_001_{cid}_overlay.stl"))
