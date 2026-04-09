@@ -5,6 +5,8 @@ import json
 import os
 from datetime import date
 
+from russian_loto.card import card_numbers
+
 DEFAULT_REGISTRY_PATH = os.environ.get(
     "RUSSIAN_LOTO_REGISTRY",
     os.path.expanduser("~/.russian-loto/printed.json"),
@@ -13,8 +15,7 @@ DEFAULT_REGISTRY_PATH = os.environ.get(
 
 def card_id(card: list[list[int | None]]) -> str:
     """Compute a stable 8-char hex ID from the card's numbers."""
-    numbers = sorted(cell for row in card for cell in row if cell is not None)
-    raw = ",".join(str(n) for n in numbers)
+    raw = ",".join(str(n) for n in card_numbers(card))
     return hashlib.sha256(raw.encode()).hexdigest()[:8]
 
 
@@ -51,10 +52,9 @@ class Registry:
         cid = card_id(card)
         if cid in self._data:
             return cid
-        numbers = sorted(cell for row in card for cell in row if cell is not None)
         self._data[cid] = {
             "seq": self._next_seq(),
-            "numbers": numbers,
+            "numbers": card_numbers(card),
             "printed_at": date.today().isoformat(),
         }
         self._save()

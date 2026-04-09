@@ -9,9 +9,11 @@ Load both into a slicer and assign different materials/colors.
 
 import os
 import time
+from collections.abc import Callable
 
 import cadquery as cq
 
+from russian_loto.constants import GRID_COLS, GRID_ROWS
 from russian_loto.registry import card_id
 
 # Card dimensions (mm)
@@ -22,19 +24,17 @@ BASE_THICKNESS = 1.5
 # Frame
 GRID_RAISE = 0.3
 OUTER_LINE_WIDTH = 1.2
-FRAME_MARGIN = 3.0  # white margin from card edge to outer frame
-FRAME_GAP = 1.5  # gap between outer and inner frame
+FRAME_MARGIN = 3.0
+FRAME_GAP = 1.5
 INNER_FRAME_WIDTH = 0.6
 
 # Grid area (inside inner frame)
 FRAME_INSET = FRAME_MARGIN + OUTER_LINE_WIDTH + FRAME_GAP + INNER_FRAME_WIDTH
-COLS = 9
-ROWS = 3
 AVAIL_WIDTH = CARD_WIDTH - 2 * FRAME_INSET
 AVAIL_HEIGHT = CARD_HEIGHT - 2 * FRAME_INSET
-CELL_SIZE = min(AVAIL_WIDTH / COLS, AVAIL_HEIGHT / ROWS)
-GRID_WIDTH = CELL_SIZE * COLS
-GRID_HEIGHT = CELL_SIZE * ROWS
+CELL_SIZE = min(AVAIL_WIDTH / GRID_COLS, AVAIL_HEIGHT / GRID_ROWS)
+GRID_WIDTH = CELL_SIZE * GRID_COLS
+GRID_HEIGHT = CELL_SIZE * GRID_ROWS
 INNER_LINE_WIDTH = 0.6
 
 # Numbers
@@ -61,7 +61,7 @@ def _build_overlay(card: list[list[int | None]]) -> cq.Workplane:
     grid_y0 = -GRID_HEIGHT / 2
 
     # Vertical grid lines
-    for col in range(1, COLS):
+    for col in range(1, GRID_COLS):
         x = grid_x0 + col * CELL_SIZE
         parts.append(
             cq.Workplane("XY")
@@ -70,7 +70,7 @@ def _build_overlay(card: list[list[int | None]]) -> cq.Workplane:
         )
 
     # Horizontal grid lines
-    for row in range(1, ROWS):
+    for row in range(1, GRID_ROWS):
         y = grid_y0 + row * CELL_SIZE
         parts.append(
             cq.Workplane("XY")
@@ -79,8 +79,8 @@ def _build_overlay(card: list[list[int | None]]) -> cq.Workplane:
         )
 
     # Numbers
-    for row_idx in range(ROWS):
-        for col_idx in range(COLS):
+    for row_idx in range(GRID_ROWS):
+        for col_idx in range(GRID_COLS):
             val = card[row_idx][col_idx]
             if val is None:
                 continue
@@ -126,32 +126,42 @@ def _make_frame_parts(top_z: float) -> list[cq.Workplane]:
     return parts
 
 
+def _default_log(msg: str, nl: bool = True) -> None:
+    print(msg, end="\n" if nl else "", flush=True)
+
+
 def render_stl(
     cards: list[tuple[int, list[list[int | None]]]],
     output_dir: str,
+    log: Callable[..., None] | None = None,
 ) -> None:
     """Render cards to STL file pairs (base + overlay).
 
-    cards: list of (seq_number, card_grid) tuples.
+    Args:
+        cards: list of (seq_number, card_grid) tuples.
+        output_dir: directory to write STL files into.
+        log: callable for progress messages. Receives (msg, nl=True).
+             Defaults to print().
     """
+    out = log or _default_log
     os.makedirs(output_dir, exist_ok=True)
     total = len(cards)
     t0 = time.monotonic()
 
-    print(f"  Building base plate ({CARD_WIDTH}x{CARD_HEIGHT}x{BASE_THICKNESS} mm)...")
+    out(f"  Building base plate ({CARD_WIDTH}x{CARD_HEIGHT}x{BASE_THICKNESS} mm)...")
     base = _build_base()
 
     for i, (seq, card) in enumerate(cards):
         card_t0 = time.monotonic()
         cid = card_id(card)
         prefix = f"card_{seq:03d}_{cid}"
-        print(f"  [{i + 1}/{total}] #{seq:03d} {cid}: building overlay...", end="", flush=True)
+        out(f"  [{i + 1}/{total}] #{seq:03d} {cid}: building overlay...", nl=False)
         overlay = _build_overlay(card)
-        print(" exporting...", end="", flush=True)
+        out(" exporting...", nl=False)
         cq.exporters.export(base, os.path.join(output_dir, f"{prefix}_base.stl"))
         cq.exporters.export(overlay, os.path.join(output_dir, f"{prefix}_overlay.stl"))
         elapsed = time.monotonic() - card_t0
-        print(f" done ({elapsed:.1f}s)")
+        out(f" done ({elapsed:.1f}s)")
 
     total_elapsed = time.monotonic() - t0
-    print(f"  Finished {total} cards in {total_elapsed:.1f}s")
+    out(f"  Finished {total} cards in {total_elapsed:.1f}s")

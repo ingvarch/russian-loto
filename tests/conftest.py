@@ -1,8 +1,5 @@
 """Shared test fixtures. Redirects the card registry to a temp file."""
 
-import tempfile
-import os
-
 import pytest
 
 

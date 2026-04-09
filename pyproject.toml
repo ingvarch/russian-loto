@@ -3,7 +3,17 @@ name = "russian-loto"
 version = "0.1.0"
 description = "Russian Loto card generator for PDF and 3D printing"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
+keywords = ["loto", "lottery", "cards", "3d-printing", "stl", "pdf"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment",
+]
 dependencies = [
     "cadquery>=2.7.0",
     "click>=8.3.2",

@@ -2,7 +2,7 @@
 
 import click
 
-from russian_loto.card import generate_card
+from russian_loto.card import card_numbers, generate_card
 from russian_loto.registry import Registry, card_id
 from russian_loto.render import render_pdf
 from russian_loto.render_stl import render_stl
@@ -50,23 +50,25 @@ Examples:
 """
 
 
-class _RawEpilog(click.Group):
-    def format_epilog(self, ctx, formatter):
+class _RawEpilogMixin:
+    """Preserves newlines in epilog (click wraps text by default)."""
+
+    def format_epilog(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
         if self.epilog:
             formatter.write("\n")
             for line in self.epilog.splitlines():
                 formatter.write(line + "\n")
 
 
-class _RawEpilogCommand(click.Command):
-    def format_epilog(self, ctx, formatter):
-        if self.epilog:
-            formatter.write("\n")
-            for line in self.epilog.splitlines():
-                formatter.write(line + "\n")
+class _RawEpilogGroup(_RawEpilogMixin, click.Group):
+    pass
 
 
-@click.group(cls=_RawEpilog, epilog=EXAMPLES)
+class _RawEpilogCommand(_RawEpilogMixin, click.Command):
+    pass
+
+
+@click.group(cls=_RawEpilogGroup, epilog=EXAMPLES)
 def main():
     """Russian Loto -- generate cards for printing."""
 
@@ -81,7 +83,7 @@ def main():
 @click.option("-d", "--output-dir", default="stl_output", show_default=True,
               help="Output directory for STL files.")
 @click.option("--no-register", is_flag=True, help="Don't register cards in the registry.")
-def cmd_gen(output_type, cards, output, output_dir, no_register):
+def cmd_gen(output_type: str, cards: int, output: str, output_dir: str, no_register: bool) -> None:
     """Generate loto cards (PDF or STL)."""
     if cards < 1:
         raise click.BadParameter("must be at least 1", param_hint="'-n'")
@@ -99,7 +101,7 @@ def cmd_gen(output_type, cards, output, output_dir, no_register):
         numbered = [(start + i, card) for i, card in enumerate(card_list)]
 
     if output_type == "stl":
-        render_stl(numbered, output_dir)
+        render_stl(numbered, output_dir, log=click.echo)
         click.echo(f"Generated {cards} STL cards -> {output_dir}/")
     else:
         render_pdf(card_list, output)
@@ -107,7 +109,7 @@ def cmd_gen(output_type, cards, output, output_dir, no_register):
 
 
 @main.command("ls")
-def cmd_ls():
+def cmd_ls() -> None:
     """List all previously printed cards."""
     registry = Registry()
     ids = registry.all_ids()

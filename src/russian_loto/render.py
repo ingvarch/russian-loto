@@ -1,18 +1,21 @@
 """Render Russian Loto cards to PDF."""
 
+import os
+import sys
+
 from PIL import Image, ImageDraw, ImageFont
+
+from russian_loto.constants import GRID_COLS, GRID_ROWS
 
 # A4 landscape at 300 DPI
 DPI = 300
 A4_WIDTH = int(11.69 * DPI)   # 3507 px
 A4_HEIGHT = int(8.27 * DPI)   # 2481 px
 
-# Card dimensions — square cells
-CARD_COLS = 9
-CARD_ROWS = 3
+# Card dimensions -- square cells
 CELL_SIZE = 90
-CARD_WIDTH = CELL_SIZE * CARD_COLS   # 765
-CARD_HEIGHT = CELL_SIZE * CARD_ROWS  # 255
+CARD_WIDTH = CELL_SIZE * GRID_COLS   # 810
+CARD_HEIGHT = CELL_SIZE * GRID_ROWS  # 270
 
 # Border thickness
 OUTER_BORDER = 6
@@ -29,7 +32,15 @@ SCALED_INNER = INNER_BORDER * SCALE
 
 # Font
 FONT_SIZE = 60 * SCALE
-FONT_PATH = "/System/Library/Fonts/Supplemental/Courier New Bold.ttf"
+
+if sys.platform == "darwin":
+    _DEFAULT_FONT = "/System/Library/Fonts/Supplemental/Courier New Bold.ttf"
+elif sys.platform == "win32":
+    _DEFAULT_FONT = r"C:\Windows\Fonts\courbd.ttf"
+else:
+    _DEFAULT_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+
+FONT_PATH = os.environ.get("RUSSIAN_LOTO_FONT", _DEFAULT_FONT)
 
 
 def _load_font() -> ImageFont.FreeTypeFont:
@@ -65,22 +76,22 @@ def _draw_card(
     inner_w = w - 2 * gap
     inner_h = h - 2 * gap
 
-    cell_w = inner_w / CARD_COLS
-    cell_h = inner_h / CARD_ROWS
+    cell_w = inner_w / GRID_COLS
+    cell_h = inner_h / GRID_ROWS
 
     # Vertical lines
-    for col in range(1, CARD_COLS):
+    for col in range(1, GRID_COLS):
         lx = inner_x0 + int(col * cell_w)
         draw.line([(lx, inner_y0), (lx, inner_y0 + inner_h)], fill="black", width=SCALED_INNER)
 
     # Horizontal lines
-    for row in range(1, CARD_ROWS):
+    for row in range(1, GRID_ROWS):
         ly = inner_y0 + int(row * cell_h)
         draw.line([(inner_x0, ly), (inner_x0 + inner_w, ly)], fill="black", width=SCALED_INNER)
 
     # Numbers
-    for row in range(CARD_ROWS):
-        for col in range(CARD_COLS):
+    for row in range(GRID_ROWS):
+        for col in range(GRID_COLS):
             val = card[row][col]
             if val is None:
                 continue
@@ -105,6 +116,7 @@ def render_pdf(
     """Render cards to a PDF file, 2 cards per A4 landscape page."""
     font = _load_font()
     pages: list[Image.Image] = []
+    card_gap = 100  # px gap between two cards on a page
 
     for i in range(0, len(cards), 2):
         page = Image.new("RGB", (A4_WIDTH, A4_HEIGHT), "white")
@@ -113,18 +125,17 @@ def render_pdf(
         page_cards = cards[i : i + 2]
 
         for idx, card in enumerate(page_cards):
-            # Center cards horizontally, distribute vertically
             card_x = (A4_WIDTH - SCALED_CARD_WIDTH) // 2
             if len(page_cards) == 2:
-                total_height = 2 * SCALED_CARD_HEIGHT + 100  # 100px gap
+                total_height = 2 * SCALED_CARD_HEIGHT + card_gap
                 start_y = (A4_HEIGHT - total_height) // 2
-                card_y = start_y + idx * (SCALED_CARD_HEIGHT + 100)
+                card_y = start_y + idx * (SCALED_CARD_HEIGHT + card_gap)
             else:
                 card_y = (A4_HEIGHT - SCALED_CARD_HEIGHT) // 2
 
             _draw_card(draw, card, card_x, card_y, font)
 
-        # Cut line between cards (if 2 cards on page)
+        # Cut line between cards
         if len(page_cards) == 2:
             cut_y = A4_HEIGHT // 2
             dash_len = 20

@@ -1,7 +1,7 @@
 """Tests for Russian Loto card generation logic."""
 
 import pytest
-from russian_loto.card import generate_card, generate_unique_cards
+from russian_loto.card import card_numbers, generate_card, generate_unique_cards
 
 
 class TestGenerateCard:
@@ -85,7 +85,7 @@ class TestGenerateUniqueCards:
     def test_all_cards_unique(self):
         cards = generate_unique_cards(10)
         card_sets = [
-            frozenset(cell for row in card for cell in row if cell is not None)
+            frozenset(card_numbers(card))
             for card in cards
         ]
         assert len(card_sets) == len(set(card_sets))
@@ -111,7 +111,7 @@ class TestGenerateUniqueCards:
         """Generate 50 cards and verify every pair is unique by number set."""
         cards = generate_unique_cards(50)
         card_sets = [
-            frozenset(cell for row in card for cell in row if cell is not None)
+            frozenset(card_numbers(card))
             for card in cards
         ]
         assert len(card_sets) == 50

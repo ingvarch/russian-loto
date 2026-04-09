@@ -4,7 +4,7 @@ import json
 import tempfile
 import os
 
-from russian_loto.card import generate_card, generate_unique_cards
+from russian_loto.card import card_numbers, generate_card, generate_unique_cards
 from russian_loto.registry import card_id, Registry
 
 
@@ -28,7 +28,7 @@ class TestCardId:
         card = generate_card()
         # Rearrange rows — same numbers, different layout
         # card_id should be the same since it's based on the number set
-        numbers = sorted(cell for row in card for cell in row if cell is not None)
+        numbers = card_numbers(card)
         card2 = generate_card()
         numbers2 = sorted(cell for row in card2 for cell in row if cell is not None)
         if numbers == numbers2:
