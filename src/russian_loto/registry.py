@@ -19,8 +19,12 @@ def card_id(card: list[list[int | None]]) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:8]
 
 
+def _entry_key(cid: str, fmt: str) -> str:
+    return f"{cid}:{fmt}"
+
+
 class Registry:
-    """Tracks which cards have been printed."""
+    """Tracks which cards have been printed, per format (pdf/stl)."""
 
     def __init__(self, path: str = DEFAULT_REGISTRY_PATH) -> None:
         self._path = path
@@ -30,31 +34,37 @@ class Registry:
                 self._data = json.load(f)
         self._migrate()
 
-    def is_printed(self, cid: str) -> bool:
-        return cid in self._data
+    def is_printed(self, cid: str, fmt: str) -> bool:
+        return _entry_key(cid, fmt) in self._data
 
-    def get_seq(self, cid: str) -> int | None:
-        """Return the sequential number for a card, or None if not found."""
-        entry = self._data.get(cid)
+    def get_seq(self, cid: str, fmt: str) -> int | None:
+        """Return the sequential number for a card+format, or None if not found."""
+        entry = self._data.get(_entry_key(cid, fmt))
         if entry is None:
             return None
         return entry["seq"]
 
-    def get_numbers(self, cid: str) -> list[int]:
+    def get_numbers(self, cid: str, fmt: str) -> list[int]:
         """Return the card's numbers, or empty list if not found."""
-        entry = self._data.get(cid)
+        entry = self._data.get(_entry_key(cid, fmt))
         if entry is None:
             return []
         return entry.get("numbers", [])
 
-    def register(self, card: list[list[int | None]]) -> str:
-        """Register a card as printed. Returns the card ID."""
+    def get_format(self, key: str) -> str:
+        """Return the format for a registry key."""
+        return self._data[key].get("format", "stl")
+
+    def register(self, card: list[list[int | None]], fmt: str) -> str:
+        """Register a card as printed in a given format. Returns the card ID."""
         cid = card_id(card)
-        if cid in self._data:
+        key = _entry_key(cid, fmt)
+        if key in self._data:
             return cid
-        self._data[cid] = {
+        self._data[key] = {
             "seq": self._next_seq(),
             "numbers": card_numbers(card),
+            "format": fmt,
             "printed_at": date.today().isoformat(),
         }
         self._save()
@@ -72,15 +82,40 @@ class Registry:
         return max(entry["seq"] for entry in self._data.values()) + 1
 
     def _migrate(self) -> None:
-        """Add seq numbers to legacy entries that don't have them."""
-        needs_migration = [cid for cid, entry in self._data.items() if "seq" not in entry]
-        if not needs_migration:
-            return
-        # Assign seq numbers by printed_at date, then by cid for stable ordering
-        needs_migration.sort(key=lambda cid: (self._data[cid].get("printed_at", ""), cid))
-        for i, cid in enumerate(needs_migration, start=1):
-            self._data[cid]["seq"] = i
-        self._save()
+        """Migrate legacy entries: add seq, add format, rekey as cid:fmt."""
+        migrated: dict[str, dict] = {}
+        needs_save = False
+
+        for key, entry in self._data.items():
+            # Add seq if missing
+            if "seq" not in entry:
+                needs_save = True
+
+            # Add format if missing (legacy entries are all STL)
+            if "format" not in entry:
+                entry["format"] = "stl"
+                needs_save = True
+
+            # Rekey: old format was just "cid", new is "cid:fmt"
+            if ":" not in key:
+                new_key = _entry_key(key, entry["format"])
+                migrated[new_key] = entry
+                needs_save = True
+            else:
+                migrated[key] = entry
+
+        self._data = migrated
+
+        # Assign seq numbers to entries that don't have them
+        no_seq = [k for k, v in self._data.items() if "seq" not in v]
+        if no_seq:
+            no_seq.sort(key=lambda k: (self._data[k].get("printed_at", ""), k))
+            for i, k in enumerate(no_seq, start=1):
+                self._data[k]["seq"] = i
+            needs_save = True
+
+        if needs_save:
+            self._save()
 
     def _save(self) -> None:
         os.makedirs(os.path.dirname(self._path), exist_ok=True)

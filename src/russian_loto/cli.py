@@ -8,8 +8,10 @@ from russian_loto.render import render_pdf
 from russian_loto.render_stl import render_stl
 
 
-def _generate_unprinted_cards(count: int, registry: Registry) -> list[list[list[int | None]]]:
-    """Generate cards that haven't been printed before."""
+def _generate_unprinted_cards(
+    count: int, registry: Registry, fmt: str,
+) -> list[list[list[int | None]]]:
+    """Generate cards that haven't been printed in this format before."""
     cards: list[list[list[int | None]]] = []
     seen: set[str] = set()
     skipped = 0
@@ -17,7 +19,7 @@ def _generate_unprinted_cards(count: int, registry: Registry) -> list[list[list[
     while len(cards) < count:
         card = generate_card()
         cid = card_id(card)
-        if cid in seen or registry.is_printed(cid):
+        if cid in seen or registry.is_printed(cid, fmt):
             skipped += 1
             continue
         seen.add(cid)
@@ -29,13 +31,13 @@ def _generate_unprinted_cards(count: int, registry: Registry) -> list[list[list[
 
 
 def _register_cards(
-    cards: list[list[list[int | None]]], registry: Registry,
+    cards: list[list[list[int | None]]], registry: Registry, fmt: str,
 ) -> list[tuple[int, list[list[int | None]]]]:
     """Register cards and return (seq, card) pairs."""
     result = []
     for card in cards:
-        cid = registry.register(card)
-        seq = registry.get_seq(cid)
+        cid = registry.register(card, fmt)
+        seq = registry.get_seq(cid, fmt)
         result.append((seq, card))
     return result
 
@@ -90,11 +92,11 @@ def cmd_gen(output_type: str, cards: int, output: str, output_dir: str, no_regis
 
     registry = Registry()
 
-    click.echo(f"Generating {cards} card(s) ({registry.count()} already in registry)...")
-    card_list = _generate_unprinted_cards(cards, registry)
+    click.echo(f"Generating {cards} {output_type.upper()} card(s) ({registry.count()} already in registry)...")
+    card_list = _generate_unprinted_cards(cards, registry, output_type)
 
     if not no_register:
-        numbered = _register_cards(card_list, registry)
+        numbered = _register_cards(card_list, registry, output_type)
         click.echo(f"  Registered {len(card_list)} card(s) ({registry.count()} total)")
     else:
         start = registry.count() + 1
@@ -116,10 +118,16 @@ def cmd_ls() -> None:
     if not ids:
         click.echo("No printed cards registered yet.")
         return
-    entries = [(registry.get_seq(cid), cid) for cid in ids]
+    entries = []
+    for key in ids:
+        fmt = registry.get_format(key)
+        # key is "cid:fmt", extract cid
+        cid = key.rsplit(":", 1)[0] if ":" in key else key
+        seq = registry.get_seq(cid, fmt)
+        numbers = registry.get_numbers(cid, fmt)
+        entries.append((seq, fmt, cid, numbers))
     entries.sort()
     click.echo(f"Printed cards ({len(entries)}):")
-    for seq, cid in entries:
-        numbers = registry.get_numbers(cid)
+    for seq, fmt, cid, numbers in entries:
         nums_str = ",".join(str(n) for n in numbers) if numbers else ""
-        click.echo(f"  #{seq:03d}  {cid}  [{nums_str}]")
+        click.echo(f"  #{seq:03d}  {fmt:3s}  {cid}  [{nums_str}]")

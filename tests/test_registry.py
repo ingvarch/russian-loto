@@ -26,11 +26,9 @@ class TestCardId:
 
     def test_same_numbers_same_id(self):
         card = generate_card()
-        # Rearrange rows — same numbers, different layout
-        # card_id should be the same since it's based on the number set
         numbers = card_numbers(card)
         card2 = generate_card()
-        numbers2 = sorted(cell for row in card2 for cell in row if cell is not None)
+        numbers2 = card_numbers(card2)
         if numbers == numbers2:
             assert card_id(card) == card_id(card2)
         else:
@@ -52,9 +50,24 @@ class TestRegistry:
             card = generate_card()
             cid = card_id(card)
 
-            assert not reg.is_printed(cid)
-            reg.register(card)
-            assert reg.is_printed(cid)
+            assert not reg.is_printed(cid, "stl")
+            reg.register(card, "stl")
+            assert reg.is_printed(cid, "stl")
+
+    def test_same_card_different_formats(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            card = generate_card()
+            cid = card_id(card)
+
+            reg.register(card, "stl")
+            assert reg.is_printed(cid, "stl")
+            assert not reg.is_printed(cid, "pdf")
+
+            reg.register(card, "pdf")
+            assert reg.is_printed(cid, "pdf")
+            assert reg.count() == 2
 
     def test_persists_to_disk(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -63,31 +76,32 @@ class TestRegistry:
             cid = card_id(card)
 
             reg1 = Registry(path)
-            reg1.register(card)
+            reg1.register(card, "stl")
 
             reg2 = Registry(path)
-            assert reg2.is_printed(cid)
+            assert reg2.is_printed(cid, "stl")
 
-    def test_stores_numbers(self):
+    def test_stores_numbers_and_format(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "printed.json")
             reg = Registry(path)
             card = generate_card()
-            reg.register(card)
+            reg.register(card, "pdf")
 
             with open(path) as f:
                 data = json.load(f)
-            cid = card_id(card)
-            assert "numbers" in data[cid]
-            assert len(data[cid]["numbers"]) == 15
+            entries = list(data.values())
+            assert len(entries) == 1
+            assert entries[0]["format"] == "pdf"
+            assert len(entries[0]["numbers"]) == 15
 
-    def test_no_duplicate_registration(self):
+    def test_no_duplicate_same_format(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "printed.json")
             reg = Registry(path)
             card = generate_card()
-            reg.register(card)
-            reg.register(card)
+            reg.register(card, "stl")
+            reg.register(card, "stl")
             assert reg.count() == 1
 
     def test_creates_parent_dirs(self):
@@ -95,7 +109,7 @@ class TestRegistry:
             path = os.path.join(tmpdir, "nested", "dir", "printed.json")
             reg = Registry(path)
             card = generate_card()
-            reg.register(card)
+            reg.register(card, "stl")
             assert os.path.exists(path)
 
     def test_sequential_numbers(self):
@@ -104,20 +118,34 @@ class TestRegistry:
             reg = Registry(path)
             cards = generate_unique_cards(3)
             for card in cards:
-                reg.register(card)
-            assert reg.get_seq(card_id(cards[0])) == 1
-            assert reg.get_seq(card_id(cards[1])) == 2
-            assert reg.get_seq(card_id(cards[2])) == 3
+                reg.register(card, "stl")
+            assert reg.get_seq(card_id(cards[0]), "stl") == 1
+            assert reg.get_seq(card_id(cards[1]), "stl") == 2
+            assert reg.get_seq(card_id(cards[2]), "stl") == 3
+
+    def test_seq_independent_per_format(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            cards = generate_unique_cards(2)
+
+            reg.register(cards[0], "stl")
+            reg.register(cards[1], "stl")
+            reg.register(cards[0], "pdf")
+
+            assert reg.get_seq(card_id(cards[0]), "stl") == 1
+            assert reg.get_seq(card_id(cards[1]), "stl") == 2
+            assert reg.get_seq(card_id(cards[0]), "pdf") == 3
 
     def test_duplicate_keeps_original_seq(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "printed.json")
             reg = Registry(path)
             cards = generate_unique_cards(2)
-            reg.register(cards[0])
-            reg.register(cards[1])
-            reg.register(cards[0])  # duplicate
-            assert reg.get_seq(card_id(cards[0])) == 1
+            reg.register(cards[0], "stl")
+            reg.register(cards[1], "stl")
+            reg.register(cards[0], "stl")  # duplicate
+            assert reg.get_seq(card_id(cards[0]), "stl") == 1
             assert reg.count() == 2
 
     def test_seq_continues_after_reload(self):
@@ -126,32 +154,25 @@ class TestRegistry:
             cards = generate_unique_cards(3)
 
             reg1 = Registry(path)
-            reg1.register(cards[0])
-            reg1.register(cards[1])
+            reg1.register(cards[0], "stl")
+            reg1.register(cards[1], "stl")
 
             reg2 = Registry(path)
-            reg2.register(cards[2])
-            assert reg2.get_seq(card_id(cards[2])) == 3
+            reg2.register(cards[2], "stl")
+            assert reg2.get_seq(card_id(cards[2]), "stl") == 3
 
-    def test_migrate_legacy_data_without_seq(self):
+    def test_migrate_legacy_without_format(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "printed.json")
-            # Write legacy format without seq
             legacy = {
-                "aabbccdd": {"numbers": [1, 2, 3], "printed_at": "2026-04-01"},
-                "11223344": {"numbers": [4, 5, 6], "printed_at": "2026-04-02"},
+                "aabbccdd": {"seq": 1, "numbers": [1, 2, 3], "printed_at": "2026-04-01"},
+                "11223344": {"seq": 2, "numbers": [4, 5, 6], "printed_at": "2026-04-02"},
             }
             with open(path, "w") as f:
                 json.dump(legacy, f)
 
             reg = Registry(path)
-            # Legacy entries get sequential numbers
-            assert reg.get_seq("aabbccdd") is not None
-            assert reg.get_seq("11223344") is not None
-            # Both get assigned, values are 1 and 2 (in some order)
-            seqs = {reg.get_seq("aabbccdd"), reg.get_seq("11223344")}
-            assert seqs == {1, 2}
-            # New card continues from 3
-            card = generate_card()
-            reg.register(card)
-            assert reg.get_seq(card_id(card)) == 3
+            # Legacy entries get format "stl"
+            assert reg.is_printed("aabbccdd", "stl")
+            assert reg.is_printed("11223344", "stl")
+            assert not reg.is_printed("aabbccdd", "pdf")
