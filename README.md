@@ -40,18 +40,26 @@ Generates cards as a PDF file (A4 landscape, 2 cards per page with cut line).
 ### Generate STL cards for 3D printing
 
 ```bash
-loto gen -t stl -n 6
+loto gen -t stl -n 6                # inlay mode (default)
+loto gen -t stl -n 6 --raised       # raised mode
 loto gen -t stl -n 2 -d my_stl_dir
 ```
 
-Each card produces two files:
+Two STL styles are available:
 
-- `card_001_a3f1b7c2_base.stl` -- flat plate, print in white/light color
-- `card_001_a3f1b7c2_overlay.stl` -- grid lines + numbers, print in black/dark color
+**Inlay (default)** -- numbers, grid, and frame are engraved into the base plate. Print face-down on a textured build plate for a smooth, professional finish. Each card produces:
 
-Load both into your slicer (PrusaSlicer, Bambu Studio, Cura), align them, and assign different materials.
+- `card_001_a3f1b7c2_base.stl` -- plate with engraved grooves (white/light color)
+- `card_001_a3f1b7c2_inlay.stl` -- insert that fills the grooves (black/dark color)
 
-Card dimensions: 230 x 90 x 2.1 mm (1.5 mm base + 0.6 mm raised numbers).
+**Raised** (`--raised`) -- numbers, grid, and frame protrude above the base plate. Each card produces:
+
+- `card_001_a3f1b7c2_base.stl` -- flat plate (white/light color)
+- `card_001_a3f1b7c2_overlay.stl` -- grid lines + numbers (black/dark color)
+
+Load both files into your slicer (PrusaSlicer, Bambu Studio, Cura), align them, and assign different materials.
+
+Card dimensions: 230 x 90 x 1.5 mm base.
 
 ### List printed cards
 
@@ -116,12 +124,12 @@ On each generation run the tool:
 
 ### STL model structure
 
-The 3D model has two parts for multi-material printing:
+Each card is two STL files for multi-material printing:
 
-- **Base** -- flat rectangular plate
-- **Overlay** -- double border frame (thick outer + thin inner with gap), grid lines between cells, and embossed numbers
+- **Inlay mode** (default) -- base has engraved grooves; inlay insert fills them flush. Print face-down for smooth surface from the build plate.
+- **Raised mode** -- base is flat; overlay with numbers and grid sits on top.
 
-All geometry is built with [CadQuery](https://cadquery.readthedocs.io/).
+Both modes include a double border frame (thick outer + thin inner with gap) and grid lines between cells. All geometry is built with [CadQuery](https://cadquery.readthedocs.io/).
 
 ## Project structure
 

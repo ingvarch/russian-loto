@@ -46,7 +46,8 @@ EXAMPLES = """
 Examples:
   loto gen -t pdf -n 6              Generate 6 PDF cards
   loto gen -t pdf -n 4 -o game.pdf  Generate 4 cards to game.pdf
-  loto gen -t stl -n 2              Generate 2 STL cards for 3D printing
+  loto gen -t stl -n 2              Generate 2 STL cards (inlay, default)
+  loto gen -t stl -n 2 --raised     Generate 2 STL cards (raised numbers)
   loto gen -t stl --no-register     Test print without saving to registry
   loto ls                           List all previously printed cards
   loto reprint --seq 1 -t pdf       Reprint card #001 as PDF
@@ -87,7 +88,9 @@ def main():
 @click.option("-d", "--output-dir", default="stl_output", show_default=True,
               help="Output directory for STL files.")
 @click.option("--no-register", is_flag=True, help="Don't register cards in the registry.")
-def cmd_gen(output_type: str, cards: int, output: str, output_dir: str, no_register: bool) -> None:
+@click.option("--inlay/--raised", default=True, show_default=True,
+              help="STL style: engraved into base (inlay) or raised above base.")
+def cmd_gen(output_type: str, cards: int, output: str, output_dir: str, no_register: bool, inlay: bool) -> None:
     """Generate loto cards (PDF or STL)."""
     if cards < 1:
         raise click.BadParameter("must be at least 1", param_hint="'-n'")
@@ -105,8 +108,9 @@ def cmd_gen(output_type: str, cards: int, output: str, output_dir: str, no_regis
         numbered = [(start + i, card) for i, card in enumerate(card_list)]
 
     if output_type == "stl":
-        render_stl(numbered, output_dir, log=click.echo)
-        click.echo(f"Generated {cards} STL cards -> {output_dir}/")
+        render_stl(numbered, output_dir, log=click.echo, inlay=inlay)
+        mode = "inlay" if inlay else "raised"
+        click.echo(f"Generated {cards} {mode} STL cards -> {output_dir}/")
     else:
         render_pdf(card_list, output)
         click.echo(f"Generated {cards} cards -> {output}")
@@ -144,7 +148,9 @@ def cmd_ls() -> None:
 @click.option("-d", "--output-dir", default="stl_output", show_default=True,
               help="Output directory for STL files.")
 @click.option("--force", is_flag=True, help="Regenerate even if already printed in this format.")
-def cmd_reprint(seq: int | None, card_hash: str | None, output_type: str, output: str, output_dir: str, force: bool) -> None:
+@click.option("--inlay/--raised", default=True, show_default=True,
+              help="STL style: engraved into base (inlay) or raised above base.")
+def cmd_reprint(seq: int | None, card_hash: str | None, output_type: str, output: str, output_dir: str, force: bool, inlay: bool) -> None:
     """Reprint an existing card in a different format."""
     if seq is None and card_hash is None:
         raise click.UsageError("Provide either --seq or --id to identify the card.")
@@ -176,7 +182,7 @@ def cmd_reprint(seq: int | None, card_hash: str | None, output_type: str, output
     click.echo(f"Reprinting #{card_seq:03d} {cid} as {output_type.upper()}...")
 
     if output_type == "stl":
-        render_stl([(card_seq, card)], output_dir, log=click.echo)
+        render_stl([(card_seq, card)], output_dir, log=click.echo, inlay=inlay)
     else:
         render_pdf([card], output)
         click.echo(f"  -> {output}")
