@@ -42,6 +42,7 @@ Generates cards as a PDF file (A4 landscape, 2 cards per page with cut line).
 ```bash
 loto gen -t stl -n 6                # inlay mode (default)
 loto gen -t stl -n 6 --raised       # raised mode
+loto gen -t stl -n 2 --no-seq       # without card number on sides
 loto gen -t stl -n 2 -d my_stl_dir
 ```
 
@@ -58,6 +59,8 @@ Two STL styles are available:
 - `card_001_a3f1b7c2_overlay.stl` -- grid lines + numbers (black/dark color)
 
 Load both files into your slicer (PrusaSlicer, Bambu Studio, Cura), align them, and assign different materials.
+
+By default, the card's sequential number is printed on both sides of the outer frame. Use `--no-seq` to disable this.
 
 Card dimensions: 230 x 90 x 1.5 mm base.
 

@@ -45,31 +45,36 @@ TEXT_FONT = "Arial Black"
 # Inlay mode: depth of engraving into the base
 INLAY_DEPTH = 0.6
 
+# Seq label on outer frame
+SEQ_FONT_SIZE = 4.0
+SEQ_PADDING = 1.0  # gap between text and frame on each side
+
 
 def _build_base() -> cq.Workplane:
     """Build the flat base plate."""
     return cq.Workplane("XY").box(CARD_WIDTH, CARD_HEIGHT, BASE_THICKNESS)
 
 
-def _build_overlay(card: list[list[int | None]]) -> cq.Workplane:
+def _build_overlay(card: list[list[int | None]], seq: int) -> cq.Workplane:
     """Build the overlay: grid lines + numbers, sitting on top of the base."""
-    return _build_overlay_shape(card, GRID_RAISE)
+    return _build_overlay_shape(card, GRID_RAISE, seq=seq)
 
 
-def _build_inlay_base(card: list[list[int | None]]) -> cq.Workplane:
+def _build_inlay_base(card: list[list[int | None]], seq: int) -> cq.Workplane:
     """Build base plate with engraved grooves for grid, frame, and numbers."""
     base = _build_base()
-    cutter = _build_overlay_shape(card, INLAY_DEPTH, engrave=True)
+    cutter = _build_overlay_shape(card, INLAY_DEPTH, engrave=True, seq=seq)
     return base.cut(cutter)
 
 
-def _build_inlay_insert(card: list[list[int | None]]) -> cq.Workplane:
+def _build_inlay_insert(card: list[list[int | None]], seq: int) -> cq.Workplane:
     """Build the inlay insert that fills the engraved grooves."""
-    return _build_overlay_shape(card, INLAY_DEPTH, engrave=True)
+    return _build_overlay_shape(card, INLAY_DEPTH, engrave=True, seq=seq)
 
 
 def _build_overlay_shape(
-    card: list[list[int | None]], height: float, engrave: bool = False,
+    card: list[list[int | None]], height: float,
+    engrave: bool = False, seq: int = 0,
 ) -> cq.Workplane:
     """Build the overlay geometry at a given height.
 
@@ -78,12 +83,11 @@ def _build_overlay_shape(
     """
     top_z = BASE_THICKNESS / 2
     if engrave:
-        # Place geometry inside the base, flush with top surface
         top_z = BASE_THICKNESS / 2 - height
     parts: list[cq.Workplane] = []
 
     # Double frame
-    parts.extend(_make_frame_parts_at(top_z, height))
+    parts.extend(_make_frame_parts_at(top_z, height, seq=seq))
 
     grid_x0 = -GRID_WIDTH / 2
     grid_y0 = -GRID_HEIGHT / 2
@@ -120,19 +124,45 @@ def _build_overlay_shape(
                 .text(str(val), TEXT_SIZE, height, font=TEXT_FONT, halign="center", valign="center")
             )
 
+    # Seq label on outer frame sides (vertical, centered, frame breaks around it)
+    if seq > 0:
+        label = f"\u2116 {seq:03d}"
+        frame_x = CARD_WIDTH / 2 - FRAME_MARGIN
+        for side in (-1, 1):
+            x = side * (frame_x - OUTER_LINE_WIDTH / 2)
+            parts.append(
+                cq.Workplane("XY")
+                .transformed(offset=(x, 0, top_z), rotate=(0, 0, side * 90))
+                .text(label, SEQ_FONT_SIZE, height, font=TEXT_FONT, halign="center", valign="center")
+            )
+
     result = parts[0]
     for part in parts[1:]:
         result = result.union(part)
     return result
 
 
-def _make_frame_parts_at(top_z: float, height: float) -> list[cq.Workplane]:
-    """Create a double frame at given height."""
+def _make_frame_parts_at(top_z: float, height: float, seq: int = 0) -> list[cq.Workplane]:
+    """Create a double frame at given height. Outer frame breaks for seq label."""
     z = top_z + height / 2
     half_w = CARD_WIDTH / 2
     half_h = CARD_HEIGHT / 2
 
-    parts = _make_rect_frame_at(half_w - FRAME_MARGIN, half_h - FRAME_MARGIN, OUTER_LINE_WIDTH, z, height)
+    outer_hw = half_w - FRAME_MARGIN
+    outer_hh = half_h - FRAME_MARGIN
+
+    if seq > 0:
+        # Outer frame with gap in left/right sides for seq label
+        # Estimate label height (text is rotated 90, so "height" in Y = text width)
+        label = f"\u2116 {seq:03d}"
+        gap_half = len(label) * SEQ_FONT_SIZE * 0.4 + SEQ_PADDING
+        parts = _make_rect_frame_with_side_gaps(
+            outer_hw, outer_hh, OUTER_LINE_WIDTH, z, height, gap_half,
+        )
+    else:
+        parts = _make_rect_frame_at(outer_hw, outer_hh, OUTER_LINE_WIDTH, z, height)
+
+    # Inner frame (always complete)
     inset = FRAME_MARGIN + OUTER_LINE_WIDTH + FRAME_GAP
     parts.extend(_make_rect_frame_at(half_w - inset, half_h - inset, INNER_FRAME_WIDTH, z, height))
     return parts
@@ -150,6 +180,33 @@ def _make_rect_frame_at(
     ]
 
 
+def _make_rect_frame_with_side_gaps(
+    half_w: float, half_h: float, lw: float, z: float, height: float,
+    gap_half: float,
+) -> list[cq.Workplane]:
+    """Create a rectangle frame with gaps in the left and right sides for labels."""
+    # Top and bottom bars (full width)
+    parts = [
+        cq.Workplane("XY").transformed(offset=(0, half_h - lw / 2, z)).box(2 * half_w, lw, height),
+        cq.Workplane("XY").transformed(offset=(0, -half_h + lw / 2, z)).box(2 * half_w, lw, height),
+    ]
+    # Left and right sides: split into upper and lower segments with gap in center
+    seg_len = half_h - gap_half  # length of each segment
+    for side in (-1, 1):
+        x = side * (half_w - lw / 2)
+        # Upper segment
+        upper_cy = gap_half + seg_len / 2
+        parts.append(
+            cq.Workplane("XY").transformed(offset=(x, upper_cy, z)).box(lw, seg_len, height)
+        )
+        # Lower segment
+        lower_cy = -(gap_half + seg_len / 2)
+        parts.append(
+            cq.Workplane("XY").transformed(offset=(x, lower_cy, z)).box(lw, seg_len, height)
+        )
+    return parts
+
+
 def _default_log(msg: str, nl: bool = True) -> None:
     print(msg, end="\n" if nl else "", flush=True)
 
@@ -159,6 +216,7 @@ def render_stl(
     output_dir: str,
     log: Callable[..., None] | None = None,
     inlay: bool = False,
+    show_seq: bool = True,
 ) -> None:
     """Render cards to STL file pairs.
 
@@ -168,6 +226,7 @@ def render_stl(
         log: callable for progress messages. Receives (msg, nl=True).
              Defaults to print().
         inlay: if True, engrave into base (for printing face-down on textured plate).
+        show_seq: if True, print card number on the sides of the card.
     """
     out = log or _default_log
     os.makedirs(output_dir, exist_ok=True)
@@ -186,14 +245,15 @@ def render_stl(
         prefix = f"card_{seq:03d}_{cid}"
         out(f"  [{i + 1}/{total}] #{seq:03d} {cid}: building...", nl=False)
 
+        label_seq = seq if show_seq else 0
         if inlay:
-            inlay_base = _build_inlay_base(card)
-            inlay_insert = _build_inlay_insert(card)
+            inlay_base = _build_inlay_base(card, label_seq)
+            inlay_insert = _build_inlay_insert(card, label_seq)
             out(" exporting...", nl=False)
             cq.exporters.export(inlay_base, os.path.join(output_dir, f"{prefix}_base.stl"))
             cq.exporters.export(inlay_insert, os.path.join(output_dir, f"{prefix}_inlay.stl"))
         else:
-            overlay = _build_overlay(card)
+            overlay = _build_overlay(card, label_seq)
             out(" exporting...", nl=False)
             cq.exporters.export(base, os.path.join(output_dir, f"{prefix}_base.stl"))
             cq.exporters.export(overlay, os.path.join(output_dir, f"{prefix}_overlay.stl"))
