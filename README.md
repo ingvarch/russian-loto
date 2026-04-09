@@ -31,8 +31,8 @@ Without direnv, use `uv run loto` instead.
 ### Generate PDF cards
 
 ```bash
-loto gen -n 6
-loto gen -n 4 -o my_cards.pdf
+loto gen -t pdf -n 6
+loto gen -t pdf -n 4 -o my_cards.pdf
 ```
 
 Generates cards as a PDF file (A4 landscape, 2 cards per page with cut line).
@@ -40,8 +40,8 @@ Generates cards as a PDF file (A4 landscape, 2 cards per page with cut line).
 ### Generate STL cards for 3D printing
 
 ```bash
-loto gen --stl -n 6
-loto gen --stl -n 2 -d my_stl_dir
+loto gen -t stl -n 6
+loto gen -t stl -n 2 -d my_stl_dir
 ```
 
 Each card produces two files:
@@ -71,7 +71,7 @@ Shows all registered cards with sequential number, hash ID, and the numbers on t
 ### Generate without registering
 
 ```bash
-loto gen --stl -n 2 --no-register
+loto gen -t stl -n 2 --no-register
 ```
 
 Useful for test prints. Cards won't be saved to the registry, so the same combinations may appear again.

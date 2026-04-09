@@ -40,8 +40,12 @@ def _register_cards(
     return result
 
 
-def cmd_generate(args: argparse.Namespace) -> None:
+def cmd_generate(args: argparse.Namespace, gen_parser: argparse.ArgumentParser) -> None:
     """Generate loto cards as PDF or STL."""
+    if not hasattr(args, "type") or args.type is None:
+        gen_parser.print_help()
+        raise SystemExit(0)
+
     registry = Registry()
 
     if args.cards < 1:
@@ -58,7 +62,7 @@ def cmd_generate(args: argparse.Namespace) -> None:
         start = registry.count() + 1
         numbered = [(start + i, card) for i, card in enumerate(cards)]
 
-    if args.stl:
+    if args.type == "stl":
         render_stl(numbered, args.output_dir)
         print(f"Generated {args.cards} STL cards -> {args.output_dir}/")
     else:
@@ -86,6 +90,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="loto",
         description="Russian Loto -- generate cards for printing",
+        epilog=(
+            "examples:\n"
+            "  loto gen -t pdf -n 6       generate 6 PDF cards\n"
+            "  loto gen -t stl -n 2       generate 2 STL cards for 3D printing\n"
+            "  loto ls                    list all previously printed cards\n"
+            "  loto gen -h                show generate options and examples\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -94,17 +106,26 @@ def main() -> None:
         "generate",
         aliases=["gen"],
         help="Generate loto cards (PDF or STL)",
+        epilog=(
+            "examples:\n"
+            "  loto gen -t pdf -n 6              generate 6 PDF cards\n"
+            "  loto gen -t pdf -n 4 -o game.pdf  generate 4 cards to game.pdf\n"
+            "  loto gen -t stl -n 2              generate 2 STL cards for 3D printing\n"
+            "  loto gen -t stl --no-register     test print without saving to registry\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    gen.add_argument(
+        "-t", "--type",
+        choices=["pdf", "stl"],
+        default=None,
+        help="output format (required): pdf or stl",
     )
     gen.add_argument(
         "-n", "--cards",
         type=int,
         default=6,
         help="number of cards to generate (default: 6)",
-    )
-    gen.add_argument(
-        "--stl",
-        action="store_true",
-        help="generate STL files for 3D printing instead of PDF",
     )
     gen.add_argument(
         "-o", "--output",
@@ -123,7 +144,7 @@ def main() -> None:
         action="store_true",
         help="don't register cards in the printed-cards registry",
     )
-    gen.set_defaults(func=cmd_generate)
+    gen.set_defaults(func=lambda args: cmd_generate(args, gen))
 
     # --- list ---
     lst = subparsers.add_parser(
