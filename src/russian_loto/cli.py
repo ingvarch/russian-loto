@@ -1,6 +1,6 @@
 """Russian Loto card generator - CLI entry point."""
 
-import argparse
+import click
 
 from russian_loto.card import generate_card
 from russian_loto.registry import Registry, card_id
@@ -24,7 +24,7 @@ def _generate_unprinted_cards(count: int, registry: Registry) -> list[list[list[
         cards.append(card)
 
     if skipped:
-        print(f"  Skipped {skipped} already-printed card(s)")
+        click.echo(f"  Skipped {skipped} already-printed card(s)")
     return cards
 
 
@@ -40,123 +40,84 @@ def _register_cards(
     return result
 
 
-def cmd_generate(args: argparse.Namespace, gen_parser: argparse.ArgumentParser) -> None:
-    """Generate loto cards as PDF or STL."""
-    if not hasattr(args, "type") or args.type is None:
-        gen_parser.print_help()
-        raise SystemExit(0)
+EXAMPLES = """
+Examples:
+  loto gen -t pdf -n 6              Generate 6 PDF cards
+  loto gen -t pdf -n 4 -o game.pdf  Generate 4 cards to game.pdf
+  loto gen -t stl -n 2              Generate 2 STL cards for 3D printing
+  loto gen -t stl --no-register     Test print without saving to registry
+  loto ls                           List all previously printed cards
+"""
+
+
+class _RawEpilog(click.Group):
+    def format_epilog(self, ctx, formatter):
+        if self.epilog:
+            formatter.write("\n")
+            for line in self.epilog.splitlines():
+                formatter.write(line + "\n")
+
+
+class _RawEpilogCommand(click.Command):
+    def format_epilog(self, ctx, formatter):
+        if self.epilog:
+            formatter.write("\n")
+            for line in self.epilog.splitlines():
+                formatter.write(line + "\n")
+
+
+@click.group(cls=_RawEpilog, epilog=EXAMPLES)
+def main():
+    """Russian Loto -- generate cards for printing."""
+
+
+@main.command("gen", cls=_RawEpilogCommand, epilog=EXAMPLES)
+@click.option("-t", "--type", "output_type", required=True,
+              type=click.Choice(["pdf", "stl"]), help="Output format: pdf or stl.")
+@click.option("-n", "--cards", default=6, show_default=True,
+              help="Number of cards to generate.")
+@click.option("-o", "--output", default="loto.pdf", show_default=True,
+              help="Output PDF file path.")
+@click.option("-d", "--output-dir", default="stl_output", show_default=True,
+              help="Output directory for STL files.")
+@click.option("--no-register", is_flag=True, help="Don't register cards in the registry.")
+def cmd_gen(output_type, cards, output, output_dir, no_register):
+    """Generate loto cards (PDF or STL)."""
+    if cards < 1:
+        raise click.BadParameter("must be at least 1", param_hint="'-n'")
 
     registry = Registry()
 
-    if args.cards < 1:
-        print("Error: number of cards must be at least 1")
-        raise SystemExit(1)
+    click.echo(f"Generating {cards} card(s) ({registry.count()} already in registry)...")
+    card_list = _generate_unprinted_cards(cards, registry)
 
-    print(f"Generating {args.cards} card(s) ({registry.count()} already in registry)...")
-    cards = _generate_unprinted_cards(args.cards, registry)
-
-    if not args.no_register:
-        numbered = _register_cards(cards, registry)
-        print(f"  Registered {len(cards)} card(s) ({registry.count()} total)")
+    if not no_register:
+        numbered = _register_cards(card_list, registry)
+        click.echo(f"  Registered {len(card_list)} card(s) ({registry.count()} total)")
     else:
         start = registry.count() + 1
-        numbered = [(start + i, card) for i, card in enumerate(cards)]
+        numbered = [(start + i, card) for i, card in enumerate(card_list)]
 
-    if args.type == "stl":
-        render_stl(numbered, args.output_dir)
-        print(f"Generated {args.cards} STL cards -> {args.output_dir}/")
+    if output_type == "stl":
+        render_stl(numbered, output_dir)
+        click.echo(f"Generated {cards} STL cards -> {output_dir}/")
     else:
-        render_pdf(cards, args.output)
-        print(f"Generated {args.cards} cards -> {args.output}")
+        render_pdf(card_list, output)
+        click.echo(f"Generated {cards} cards -> {output}")
 
 
-def cmd_list(args: argparse.Namespace) -> None:
-    """List all registered (printed) cards."""
+@main.command("ls")
+def cmd_ls():
+    """List all previously printed cards."""
     registry = Registry()
     ids = registry.all_ids()
     if not ids:
-        print("No printed cards registered yet.")
+        click.echo("No printed cards registered yet.")
         return
     entries = [(registry.get_seq(cid), cid) for cid in ids]
     entries.sort()
-    print(f"Printed cards ({len(entries)}):")
+    click.echo(f"Printed cards ({len(entries)}):")
     for seq, cid in entries:
         numbers = registry.get_numbers(cid)
         nums_str = ",".join(str(n) for n in numbers) if numbers else ""
-        print(f"  #{seq:03d}  {cid}  [{nums_str}]")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        prog="loto",
-        description="Russian Loto -- generate cards for printing",
-        epilog=(
-            "examples:\n"
-            "  loto gen -t pdf -n 6       generate 6 PDF cards\n"
-            "  loto gen -t stl -n 2       generate 2 STL cards for 3D printing\n"
-            "  loto ls                    list all previously printed cards\n"
-            "  loto gen -h                show generate options and examples\n"
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # --- generate ---
-    gen = subparsers.add_parser(
-        "generate",
-        aliases=["gen"],
-        help="Generate loto cards (PDF or STL)",
-        epilog=(
-            "examples:\n"
-            "  loto gen -t pdf -n 6              generate 6 PDF cards\n"
-            "  loto gen -t pdf -n 4 -o game.pdf  generate 4 cards to game.pdf\n"
-            "  loto gen -t stl -n 2              generate 2 STL cards for 3D printing\n"
-            "  loto gen -t stl --no-register     test print without saving to registry\n"
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    gen.add_argument(
-        "-t", "--type",
-        choices=["pdf", "stl"],
-        default=None,
-        help="output format (required): pdf or stl",
-    )
-    gen.add_argument(
-        "-n", "--cards",
-        type=int,
-        default=6,
-        help="number of cards to generate (default: 6)",
-    )
-    gen.add_argument(
-        "-o", "--output",
-        type=str,
-        default="loto.pdf",
-        help="output PDF file path (default: loto.pdf)",
-    )
-    gen.add_argument(
-        "-d", "--output-dir",
-        type=str,
-        default="stl_output",
-        help="output directory for STL files (default: stl_output)",
-    )
-    gen.add_argument(
-        "--no-register",
-        action="store_true",
-        help="don't register cards in the printed-cards registry",
-    )
-    gen.set_defaults(func=lambda args: cmd_generate(args, gen))
-
-    # --- list ---
-    lst = subparsers.add_parser(
-        "list",
-        aliases=["ls"],
-        help="List all previously printed cards",
-    )
-    lst.set_defaults(func=cmd_list)
-
-    args = parser.parse_args()
-    args.func(args)
-
-
-if __name__ == "__main__":
-    main()
+        click.echo(f"  #{seq:03d}  {cid}  [{nums_str}]")
