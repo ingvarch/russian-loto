@@ -2,7 +2,7 @@
 
 import click
 
-from russian_loto.card import card_numbers, generate_card
+from russian_loto.card import generate_card, reconstruct_card
 from russian_loto.registry import Registry, card_id
 from russian_loto.render import render_pdf
 from russian_loto.render_stl import render_stl
@@ -37,7 +37,7 @@ def _register_cards(
     result = []
     for card in cards:
         cid = registry.register(card, fmt)
-        seq = registry.get_seq(cid, fmt)
+        seq = registry.get_seq(cid)
         result.append((seq, card))
     return result
 
@@ -49,6 +49,8 @@ Examples:
   loto gen -t stl -n 2              Generate 2 STL cards for 3D printing
   loto gen -t stl --no-register     Test print without saving to registry
   loto ls                           List all previously printed cards
+  loto reprint --seq 1 -t pdf       Reprint card #001 as PDF
+  loto reprint --id aa7c4b83 -t stl Reprint card by hash as STL
 """
 
 
@@ -119,15 +121,64 @@ def cmd_ls() -> None:
         click.echo("No printed cards registered yet.")
         return
     entries = []
-    for key in ids:
-        fmt = registry.get_format(key)
-        # key is "cid:fmt", extract cid
-        cid = key.rsplit(":", 1)[0] if ":" in key else key
-        seq = registry.get_seq(cid, fmt)
-        numbers = registry.get_numbers(cid, fmt)
-        entries.append((seq, fmt, cid, numbers))
+    for cid in ids:
+        seq = registry.get_seq(cid)
+        formats = registry.get_formats(cid)
+        numbers = registry.get_numbers(cid)
+        entries.append((seq, cid, formats, numbers))
     entries.sort()
     click.echo(f"Printed cards ({len(entries)}):")
-    for seq, fmt, cid, numbers in entries:
+    for seq, cid, formats, numbers in entries:
+        fmts = ",".join(formats)
         nums_str = ",".join(str(n) for n in numbers) if numbers else ""
-        click.echo(f"  #{seq:03d}  {fmt:3s}  {cid}  [{nums_str}]")
+        click.echo(f"  #{seq:03d}  {fmts:<7s}  {cid}  [{nums_str}]")
+
+
+@main.command("reprint", cls=_RawEpilogCommand, epilog=EXAMPLES)
+@click.option("--seq", type=int, default=None, help="Card sequential number (e.g. 1).")
+@click.option("--id", "card_hash", type=str, default=None, help="Card hash ID (e.g. aa7c4b83).")
+@click.option("-t", "--type", "output_type", required=True,
+              type=click.Choice(["pdf", "stl"]), help="Output format: pdf or stl.")
+@click.option("-o", "--output", default="loto.pdf", show_default=True,
+              help="Output PDF file path.")
+@click.option("-d", "--output-dir", default="stl_output", show_default=True,
+              help="Output directory for STL files.")
+def cmd_reprint(seq: int | None, card_hash: str | None, output_type: str, output: str, output_dir: str) -> None:
+    """Reprint an existing card in a different format."""
+    if seq is None and card_hash is None:
+        raise click.UsageError("Provide either --seq or --id to identify the card.")
+    if seq is not None and card_hash is not None:
+        raise click.UsageError("Provide only one of --seq or --id, not both.")
+
+    registry = Registry()
+
+    if seq is not None:
+        result = registry.find_by_seq(seq)
+        if result is None:
+            raise click.ClickException(f"Card with seq #{seq:03d} not found.")
+        cid, entry = result
+    else:
+        numbers = registry.get_numbers(card_hash)
+        if not numbers:
+            raise click.ClickException(f"Card with id {card_hash} not found.")
+        cid = card_hash
+        entry = {"numbers": numbers}
+
+    if registry.is_printed(cid, output_type):
+        click.echo(f"Card #{registry.get_seq(cid):03d} {cid} already printed as {output_type.upper()}.")
+        return
+
+    numbers = entry["numbers"]
+    card = reconstruct_card(numbers)
+    card_seq = registry.get_seq(cid)
+
+    click.echo(f"Reprinting #{card_seq:03d} {cid} as {output_type.upper()}...")
+
+    if output_type == "stl":
+        render_stl([(card_seq, card)], output_dir, log=click.echo)
+    else:
+        render_pdf([card], output)
+        click.echo(f"  -> {output}")
+
+    registry.register(card, output_type)
+    click.echo(f"  Updated registry: {cid} formats={registry.get_formats(cid)}")

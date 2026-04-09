@@ -137,6 +137,38 @@ def _assign_rows(
     return False
 
 
+def reconstruct_card(numbers: list[int]) -> list[list[int | None]]:
+    """Rebuild a valid 3x9 grid from 15 numbers.
+
+    Numbers are placed in their correct columns by range,
+    sorted within each column, and distributed across rows.
+    """
+    col_numbers: list[list[int]] = [[] for _ in range(GRID_COLS)]
+    for n in numbers:
+        for col, (lo, hi) in enumerate(COLUMN_RANGES):
+            if lo <= n <= hi:
+                col_numbers[col].append(n)
+                break
+    for col in range(GRID_COLS):
+        col_numbers[col].sort()
+
+    row_counts = [0, 0, 0]
+    col_row_assignments: list[list[int]] = [[] for _ in range(GRID_COLS)]
+    col_order = sorted(range(GRID_COLS), key=lambda c: -len(col_numbers[c]))
+
+    if not _assign_rows(col_order, 0, col_numbers, col_row_assignments, row_counts):
+        raise ValueError("Cannot reconstruct valid card from given numbers")
+
+    card: list[list[int | None]] = [[None] * GRID_COLS for _ in range(GRID_ROWS)]
+    for col in range(GRID_COLS):
+        rows = sorted(col_row_assignments[col])
+        nums = sorted(col_numbers[col])
+        for row, num in zip(rows, nums):
+            card[row][col] = num
+
+    return card
+
+
 def generate_unique_cards(count: int) -> list[list[list[int | None]]]:
     """Generate the specified number of unique cards."""
     cards: list[list[list[int | None]]] = []

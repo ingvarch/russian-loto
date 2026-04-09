@@ -67,7 +67,9 @@ class TestRegistry:
 
             reg.register(card, "pdf")
             assert reg.is_printed(cid, "pdf")
-            assert reg.count() == 2
+            # Still one entry, not two
+            assert reg.count() == 1
+            assert reg.get_formats(cid) == ["stl", "pdf"]
 
     def test_persists_to_disk(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -81,28 +83,29 @@ class TestRegistry:
             reg2 = Registry(path)
             assert reg2.is_printed(cid, "stl")
 
-    def test_stores_numbers_and_format(self):
+    def test_stores_numbers_and_formats(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "printed.json")
             reg = Registry(path)
             card = generate_card()
+            cid = card_id(card)
             reg.register(card, "pdf")
 
             with open(path) as f:
                 data = json.load(f)
-            entries = list(data.values())
-            assert len(entries) == 1
-            assert entries[0]["format"] == "pdf"
-            assert len(entries[0]["numbers"]) == 15
+            assert data[cid]["formats"] == ["pdf"]
+            assert len(data[cid]["numbers"]) == 15
 
     def test_no_duplicate_same_format(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "printed.json")
             reg = Registry(path)
             card = generate_card()
+            cid = card_id(card)
             reg.register(card, "stl")
             reg.register(card, "stl")
             assert reg.count() == 1
+            assert reg.get_formats(cid) == ["stl"]
 
     def test_creates_parent_dirs(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -119,33 +122,19 @@ class TestRegistry:
             cards = generate_unique_cards(3)
             for card in cards:
                 reg.register(card, "stl")
-            assert reg.get_seq(card_id(cards[0]), "stl") == 1
-            assert reg.get_seq(card_id(cards[1]), "stl") == 2
-            assert reg.get_seq(card_id(cards[2]), "stl") == 3
+            assert reg.get_seq(card_id(cards[0])) == 1
+            assert reg.get_seq(card_id(cards[1])) == 2
+            assert reg.get_seq(card_id(cards[2])) == 3
 
-    def test_seq_independent_per_format(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, "printed.json")
-            reg = Registry(path)
-            cards = generate_unique_cards(2)
-
-            reg.register(cards[0], "stl")
-            reg.register(cards[1], "stl")
-            reg.register(cards[0], "pdf")
-
-            assert reg.get_seq(card_id(cards[0]), "stl") == 1
-            assert reg.get_seq(card_id(cards[1]), "stl") == 2
-            assert reg.get_seq(card_id(cards[0]), "pdf") == 3
-
-    def test_duplicate_keeps_original_seq(self):
+    def test_adding_format_keeps_seq(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "printed.json")
             reg = Registry(path)
             cards = generate_unique_cards(2)
             reg.register(cards[0], "stl")
             reg.register(cards[1], "stl")
-            reg.register(cards[0], "stl")  # duplicate
-            assert reg.get_seq(card_id(cards[0]), "stl") == 1
+            reg.register(cards[0], "pdf")  # same card, new format
+            assert reg.get_seq(card_id(cards[0])) == 1  # seq unchanged
             assert reg.count() == 2
 
     def test_seq_continues_after_reload(self):
@@ -159,20 +148,53 @@ class TestRegistry:
 
             reg2 = Registry(path)
             reg2.register(cards[2], "stl")
-            assert reg2.get_seq(card_id(cards[2]), "stl") == 3
+            assert reg2.get_seq(card_id(cards[2])) == 3
 
-    def test_migrate_legacy_without_format(self):
+    def test_find_by_seq(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            cards = generate_unique_cards(3)
+            for card in cards:
+                reg.register(card, "stl")
+
+            cid, entry = reg.find_by_seq(2)
+            assert cid == card_id(cards[1])
+            assert entry["seq"] == 2
+
+    def test_find_by_seq_not_found(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            assert reg.find_by_seq(99) is None
+
+    def test_migrate_legacy_cid_colon_format(self):
+        """Migrate from cid:fmt keying to plain cid with formats array."""
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "printed.json")
             legacy = {
-                "aabbccdd": {"seq": 1, "numbers": [1, 2, 3], "printed_at": "2026-04-01"},
-                "11223344": {"seq": 2, "numbers": [4, 5, 6], "printed_at": "2026-04-02"},
+                "aabbccdd:stl": {"seq": 1, "numbers": [1, 2, 3], "format": "stl", "printed_at": "2026-04-01"},
+                "11223344:stl": {"seq": 2, "numbers": [4, 5, 6], "format": "stl", "printed_at": "2026-04-02"},
             }
             with open(path, "w") as f:
                 json.dump(legacy, f)
 
             reg = Registry(path)
-            # Legacy entries get format "stl"
             assert reg.is_printed("aabbccdd", "stl")
             assert reg.is_printed("11223344", "stl")
-            assert not reg.is_printed("aabbccdd", "pdf")
+            assert reg.get_seq("aabbccdd") == 1
+            assert reg.count() == 2
+
+    def test_migrate_legacy_no_format(self):
+        """Migrate from old format without format field."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            legacy = {
+                "aabbccdd": {"seq": 1, "numbers": [1, 2, 3], "printed_at": "2026-04-01"},
+            }
+            with open(path, "w") as f:
+                json.dump(legacy, f)
+
+            reg = Registry(path)
+            assert reg.is_printed("aabbccdd", "stl")
+            assert reg.get_formats("aabbccdd") == ["stl"]

@@ -1,7 +1,7 @@
 """Tests for Russian Loto card generation logic."""
 
 import pytest
-from russian_loto.card import card_numbers, generate_card, generate_unique_cards
+from russian_loto.card import card_numbers, generate_card, generate_unique_cards, reconstruct_card
 
 
 class TestGenerateCard:
@@ -116,3 +116,45 @@ class TestGenerateUniqueCards:
         ]
         assert len(card_sets) == 50
         assert len(set(card_sets)) == 50
+
+
+class TestReconstructCard:
+    """Tests for reconstructing a card from numbers."""
+
+    def test_preserves_numbers(self):
+        card = generate_card()
+        numbers = card_numbers(card)
+        rebuilt = reconstruct_card(numbers)
+        assert sorted(card_numbers(rebuilt)) == sorted(numbers)
+
+    def test_valid_structure(self):
+        card = generate_card()
+        rebuilt = reconstruct_card(card_numbers(card))
+        assert len(rebuilt) == 3
+        for row in rebuilt:
+            assert len(row) == 9
+            assert sum(1 for c in row if c is not None) == 5
+
+    def test_column_ranges(self):
+        card = generate_card()
+        rebuilt = reconstruct_card(card_numbers(card))
+        for col in range(9):
+            lo = col * 10 + 1 if col > 0 else 1
+            hi = col * 10 + 9 if col < 8 else 90
+            for row in range(3):
+                val = rebuilt[row][col]
+                if val is not None:
+                    assert lo <= val <= hi
+
+    def test_sorted_within_columns(self):
+        card = generate_card()
+        rebuilt = reconstruct_card(card_numbers(card))
+        for col in range(9):
+            vals = [rebuilt[row][col] for row in range(3) if rebuilt[row][col] is not None]
+            assert vals == sorted(vals)
+
+    def test_multiple_cards(self):
+        for _ in range(50):
+            card = generate_card()
+            rebuilt = reconstruct_card(card_numbers(card))
+            assert sorted(card_numbers(rebuilt)) == sorted(card_numbers(card))

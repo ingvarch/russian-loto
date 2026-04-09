@@ -61,12 +61,22 @@ loto ls
 
 ```
 Printed cards (6):
-  #001  b4238332  [3,9,15,22,31,38,47,55,62,68,71,76,80,85,90]
-  #002  b64c4fd4  [1,12,24,33,40,49,53,61,70,74,82,86,...]
+  #001  stl,pdf  b4238332  [3,9,15,22,31,38,47,55,62,68,71,76,80,85,90]
+  #002  stl      b64c4fd4  [1,12,24,33,40,49,53,61,70,74,82,86,...]
   ...
 ```
 
-Shows all registered cards with sequential number, hash ID, and the numbers on the card.
+Shows all registered cards with sequential number, formats, hash ID, and the numbers on the card.
+
+### Reprint a card in another format
+
+```bash
+loto reprint --seq 1 -t pdf              # by sequential number
+loto reprint --id aa7c4b83 -t stl        # by hash ID
+loto reprint --seq 5 -t stl -d my_dir    # custom output directory
+```
+
+Reconstructs the card from stored numbers and renders it in the target format. The format is added to the card's registry entry. Useful when you printed PDF cards for a game and later want to 3D-print specific ones.
 
 ### Generate without registering
 
@@ -92,10 +102,12 @@ Each card is a 3x9 grid following standard Russian Loto rules:
 
 Every generated card gets a stable ID -- first 8 characters of SHA-256 hash computed from its sorted numbers. The registry is stored at `~/.russian-loto/printed.json`.
 
+Each entry tracks the card's numbers, sequential number, and a list of formats it was printed in (`["stl"]`, `["pdf"]`, or `["stl", "pdf"]`). The same card can exist in multiple formats without duplication.
+
 On each generation run the tool:
 
 1. Generates random valid cards
-2. Checks each against the registry, skipping duplicates
+2. Checks each against the registry for the requested format, skipping duplicates
 3. Assigns sequential numbers (#001, #002, ...)
 4. Saves to registry after successful generation
 
@@ -113,7 +125,7 @@ All geometry is built with [CadQuery](https://cadquery.readthedocs.io/).
 ```
 src/russian_loto/
     card.py         -- card generation logic
-    cli.py          -- CLI entry point (subcommands: generate, list)
+    cli.py          -- CLI entry point (subcommands: generate, list, reprint)
     registry.py     -- printed card registry (JSON file)
     render.py       -- PDF rendering with Pillow
     render_stl.py   -- STL rendering with CadQuery

@@ -19,12 +19,15 @@ def card_id(card: list[list[int | None]]) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:8]
 
 
-def _entry_key(cid: str, fmt: str) -> str:
-    return f"{cid}:{fmt}"
-
-
 class Registry:
-    """Tracks which cards have been printed, per format (pdf/stl)."""
+    """Tracks which cards have been printed.
+
+    Each entry is keyed by card ID (8-char hash) and stores:
+    - seq: sequential number
+    - numbers: the 15 card numbers
+    - formats: list of formats printed (e.g. ["stl", "pdf"])
+    - printed_at: date of first registration
+    """
 
     def __init__(self, path: str = DEFAULT_REGISTRY_PATH) -> None:
         self._path = path
@@ -35,36 +38,51 @@ class Registry:
         self._migrate()
 
     def is_printed(self, cid: str, fmt: str) -> bool:
-        return _entry_key(cid, fmt) in self._data
+        entry = self._data.get(cid)
+        if entry is None:
+            return False
+        return fmt in entry["formats"]
 
-    def get_seq(self, cid: str, fmt: str) -> int | None:
-        """Return the sequential number for a card+format, or None if not found."""
-        entry = self._data.get(_entry_key(cid, fmt))
+    def get_seq(self, cid: str) -> int | None:
+        """Return the sequential number for a card, or None if not found."""
+        entry = self._data.get(cid)
         if entry is None:
             return None
         return entry["seq"]
 
-    def get_numbers(self, cid: str, fmt: str) -> list[int]:
+    def get_numbers(self, cid: str) -> list[int]:
         """Return the card's numbers, or empty list if not found."""
-        entry = self._data.get(_entry_key(cid, fmt))
+        entry = self._data.get(cid)
         if entry is None:
             return []
         return entry.get("numbers", [])
 
-    def get_format(self, key: str) -> str:
-        """Return the format for a registry key."""
-        return self._data[key].get("format", "stl")
+    def get_formats(self, cid: str) -> list[str]:
+        """Return the list of formats this card was printed in."""
+        entry = self._data.get(cid)
+        if entry is None:
+            return []
+        return entry.get("formats", [])
+
+    def find_by_seq(self, seq: int) -> tuple[str, dict] | None:
+        """Find a card by its sequential number. Returns (cid, entry) or None."""
+        for cid, entry in self._data.items():
+            if entry["seq"] == seq:
+                return cid, entry
+        return None
 
     def register(self, card: list[list[int | None]], fmt: str) -> str:
         """Register a card as printed in a given format. Returns the card ID."""
         cid = card_id(card)
-        key = _entry_key(cid, fmt)
-        if key in self._data:
+        if cid in self._data:
+            if fmt not in self._data[cid]["formats"]:
+                self._data[cid]["formats"].append(fmt)
+                self._save()
             return cid
-        self._data[key] = {
+        self._data[cid] = {
             "seq": self._next_seq(),
             "numbers": card_numbers(card),
-            "format": fmt,
+            "formats": [fmt],
             "printed_at": date.today().isoformat(),
         }
         self._save()
@@ -82,27 +100,34 @@ class Registry:
         return max(entry["seq"] for entry in self._data.values()) + 1
 
     def _migrate(self) -> None:
-        """Migrate legacy entries: add seq, add format, rekey as cid:fmt."""
+        """Migrate legacy registry formats to current schema."""
         migrated: dict[str, dict] = {}
         needs_save = False
 
         for key, entry in self._data.items():
-            # Add seq if missing
-            if "seq" not in entry:
-                needs_save = True
-
-            # Add format if missing (legacy entries are all STL)
-            if "format" not in entry:
-                entry["format"] = "stl"
-                needs_save = True
-
-            # Rekey: old format was just "cid", new is "cid:fmt"
-            if ":" not in key:
-                new_key = _entry_key(key, entry["format"])
-                migrated[new_key] = entry
+            # Determine the real cid (strip :fmt suffix if present)
+            if ":" in key:
+                cid = key.rsplit(":", 1)[0]
                 needs_save = True
             else:
-                migrated[key] = entry
+                cid = key
+
+            # Convert "format" (string) -> "formats" (list)
+            if "format" in entry:
+                entry["formats"] = [entry.pop("format")]
+                needs_save = True
+            elif "formats" not in entry:
+                entry["formats"] = ["stl"]
+                needs_save = True
+
+            # Merge entries for the same cid
+            if cid in migrated:
+                for fmt in entry["formats"]:
+                    if fmt not in migrated[cid]["formats"]:
+                        migrated[cid]["formats"].append(fmt)
+                needs_save = True
+            else:
+                migrated[cid] = entry
 
         self._data = migrated
 
