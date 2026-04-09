@@ -143,7 +143,8 @@ def cmd_ls() -> None:
               help="Output PDF file path.")
 @click.option("-d", "--output-dir", default="stl_output", show_default=True,
               help="Output directory for STL files.")
-def cmd_reprint(seq: int | None, card_hash: str | None, output_type: str, output: str, output_dir: str) -> None:
+@click.option("--force", is_flag=True, help="Regenerate even if already printed in this format.")
+def cmd_reprint(seq: int | None, card_hash: str | None, output_type: str, output: str, output_dir: str, force: bool) -> None:
     """Reprint an existing card in a different format."""
     if seq is None and card_hash is None:
         raise click.UsageError("Provide either --seq or --id to identify the card.")
@@ -164,8 +165,8 @@ def cmd_reprint(seq: int | None, card_hash: str | None, output_type: str, output
         cid = card_hash
         entry = {"numbers": numbers}
 
-    if registry.is_printed(cid, output_type):
-        click.echo(f"Card #{registry.get_seq(cid):03d} {cid} already printed as {output_type.upper()}.")
+    if registry.is_printed(cid, output_type) and not force:
+        click.echo(f"Card #{registry.get_seq(cid):03d} {cid} already printed as {output_type.upper()}. Use --force to regenerate.")
         return
 
     numbers = entry["numbers"]

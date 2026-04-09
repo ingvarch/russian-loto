@@ -74,9 +74,12 @@ Shows all registered cards with sequential number, formats, hash ID, and the num
 loto reprint --seq 1 -t pdf              # by sequential number
 loto reprint --id aa7c4b83 -t stl        # by hash ID
 loto reprint --seq 5 -t stl -d my_dir    # custom output directory
+loto reprint --seq 1 -t stl --force      # regenerate even if already printed
 ```
 
 Reconstructs the card from stored numbers and renders it in the target format. The format is added to the card's registry entry. Useful when you printed PDF cards for a game and later want to 3D-print specific ones.
+
+If the card was already printed in the requested format, use `--force` to regenerate anyway.
 
 ### Generate without registering
 
