@@ -1,7 +1,7 @@
 """Tests for Russian Loto card generation logic."""
 
 import pytest
-from card import generate_card, generate_unique_cards
+from russian_loto.card import generate_card, generate_unique_cards
 
 
 class TestGenerateCard:

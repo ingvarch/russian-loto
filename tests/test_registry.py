@@ -4,8 +4,8 @@ import json
 import tempfile
 import os
 
-from card import generate_card, generate_unique_cards
-from registry import card_id, Registry
+from russian_loto.card import generate_card, generate_unique_cards
+from russian_loto.registry import card_id, Registry
 
 
 class TestCardId:

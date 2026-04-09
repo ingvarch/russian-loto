@@ -39,6 +39,13 @@ class Registry:
             return None
         return entry["seq"]
 
+    def get_numbers(self, cid: str) -> list[int]:
+        """Return the card's numbers, or empty list if not found."""
+        entry = self._data.get(cid)
+        if entry is None:
+            return []
+        return entry.get("numbers", [])
+
     def register(self, card: list[list[int | None]]) -> str:
         """Register a card as printed. Returns the card ID."""
         cid = card_id(card)

@@ -5,9 +5,9 @@ import tempfile
 
 import cadquery as cq
 
-from card import generate_card, generate_unique_cards
-from registry import card_id
-from render_stl import _build_base, _build_overlay, render_stl
+from russian_loto.card import generate_card, generate_unique_cards
+from russian_loto.registry import card_id
+from russian_loto.render_stl import _build_base, _build_overlay, render_stl
 
 # Tolerances for geometry checks (mm)
 EXPECTED_WIDTH = 230.0

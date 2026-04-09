@@ -1310,7 +1310,7 @@ wheels = [
 [[package]]
 name = "russian-loto"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "cadquery" },
     { name = "pillow" },

@@ -12,7 +12,7 @@ import time
 
 import cadquery as cq
 
-from registry import card_id
+from russian_loto.registry import card_id
 
 # Card dimensions (mm)
 CARD_WIDTH = 230.0
