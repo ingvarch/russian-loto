@@ -5,7 +5,9 @@ The server holds no game state -- it just delivers the page once with all
 registered cards baked in as JSON. All game logic runs in the browser.
 """
 
+import base64
 import json
+import secrets
 import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib import resources
@@ -50,12 +52,52 @@ def render_page(payload: list[dict]) -> str:
     return template.replace("{{CARDS_JSON}}", json.dumps(payload, ensure_ascii=False))
 
 
-def make_handler(html: str) -> type[BaseHTTPRequestHandler]:
-    """Build a request handler that serves a single HTML string at `/`."""
+def generate_auth_code() -> str:
+    """Return a cryptographically random 6-digit numeric code, zero-padded."""
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def check_basic_auth(header: str | None, expected: str) -> bool:
+    """Return True if `header` is a Basic auth header with the expected password.
+
+    The username portion is ignored -- any non-empty or empty username is accepted
+    as long as the password matches. Comparison is constant-time via
+    `secrets.compare_digest`.
+    """
+    if not header or not header.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(header[len("Basic "):].strip(), validate=True).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return False
+    _, sep, password = decoded.partition(":")
+    if not sep:
+        return False
+    return secrets.compare_digest(password, expected)
+
+
+def make_handler(
+    html: str,
+    auth_code: str | None = None,
+) -> type[BaseHTTPRequestHandler]:
+    """Build a request handler that serves a single HTML string at `/`.
+
+    When `auth_code` is set, every request must include an HTTP Basic auth
+    header with that code as the password; requests without valid auth get
+    401 with a `WWW-Authenticate` header so the browser prompts for credentials.
+    """
     body = html.encode("utf-8")
 
     class _Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 (BaseHTTPRequestHandler API)
+            if auth_code is not None:
+                if not check_basic_auth(self.headers.get("Authorization"), auth_code):
+                    self.send_response(401)
+                    self.send_header("WWW-Authenticate", 'Basic realm="Russian Loto"')
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(b"Authentication required")
+                    return
             if self.path == "/":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -91,12 +133,22 @@ def _detect_lan_ip() -> str | None:
         s.close()
 
 
-def serve(registry: Registry, host: str = "0.0.0.0", port: int = 8000) -> None:
-    """Start the game web server. Blocks until interrupted."""
+def serve(
+    registry: Registry,
+    host: str = "0.0.0.0",
+    port: int = 8000,
+    auth_code: str | None = None,
+) -> None:
+    """Start the game web server. Blocks until interrupted.
+
+    When `auth_code` is set, the page is protected by HTTP Basic auth and
+    the code is printed in the startup banner so the host can read it to
+    the phone.
+    """
     payload = build_cards_payload(registry)
     skipped = list_skipped_seqs(registry)
     html = render_page(payload)
-    handler = make_handler(html)
+    handler = make_handler(html, auth_code=auth_code)
     server = HTTPServer((host, port), handler)
 
     lan = _detect_lan_ip()
@@ -106,6 +158,8 @@ def serve(registry: Registry, host: str = "0.0.0.0", port: int = 8000) -> None:
         skipped_str = ", ".join(f"#{s:03d}" for s in skipped)
         print(f"  WARNING: {len(skipped)} card(s) skipped (no stored row layout): {skipped_str}", flush=True)
         print("           run `loto fix-rows --seq N` for each to bring them into the game", flush=True)
+    if auth_code:
+        print(f"  Auth code: {auth_code}   (enter as password; username can be anything)", flush=True)
     print(f"  Local:   http://127.0.0.1:{port}", flush=True)
     if lan and lan != "127.0.0.1":
         print(f"  Network: http://{lan}:{port}   <- open this on your phone", flush=True)

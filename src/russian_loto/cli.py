@@ -7,7 +7,7 @@ from russian_loto.constants import COLUMN_RANGES, GRID_COLS, GRID_ROWS
 from russian_loto.registry import Registry, card_id
 from russian_loto.render import render_pdf
 from russian_loto.render_stl import render_stl
-from russian_loto.serve import serve
+from russian_loto.serve import generate_auth_code, serve
 
 
 def _parse_seq_range(spec: str) -> list[int]:
@@ -199,6 +199,8 @@ Examples:
   loto reprint --seq 1 -t pdf       Reprint card #001 as PDF
   loto reprint --id aa7c4b83 -t stl Reprint card by hash as STL
   loto serve                        Start live game server (open URL on phone)
+  loto serve --auth                 Start server with random 6-digit auth code
+  loto serve --auth-code 4242       Start server with a specific auth code
   loto fix-rows --seq 1             Enter row layout for a legacy card
   loto rm 5-50                      Delete cards #005..#050 from the registry
 """
@@ -475,6 +477,18 @@ def cmd_rm(seq_spec: str, force: bool) -> None:
 @click.option("--host", default="0.0.0.0", show_default=True,
               help="Interface to bind. Use 0.0.0.0 to allow phone access over LAN.")
 @click.option("--port", default=8000, show_default=True, help="TCP port to listen on.")
-def cmd_serve(host: str, port: int) -> None:
+@click.option("--auth", is_flag=True,
+              help="Require an HTTP Basic auth code to view the page. Auto-generates a random 6-digit code unless --auth-code is also given.")
+@click.option("--auth-code", default=None,
+              help="Use this exact auth code instead of auto-generating. Implies --auth.")
+def cmd_serve(host: str, port: int, auth: bool, auth_code: str | None) -> None:
     """Start the live game web server for verifying wins from your phone."""
-    serve(Registry(), host=host, port=port)
+    if auth_code is not None:
+        if not auth_code:
+            raise click.BadParameter("cannot be empty", param_hint="'--auth-code'")
+        code: str | None = auth_code
+    elif auth:
+        code = generate_auth_code()
+    else:
+        code = None
+    serve(Registry(), host=host, port=port, auth_code=code)

@@ -135,6 +135,31 @@ The server holds no game state of its own. It is a one-shot HTML delivery mechan
 
 Cards without a stored row layout (legacy entries from before the rows feature) are automatically excluded from the live game UI and listed in the startup banner with a hint to run `loto fix-rows --seq N` for each.
 
+#### Password protection
+
+```bash
+loto serve --auth                 # random 6-digit code
+loto serve --auth-code 4242       # specific code
+```
+
+Adds HTTP Basic auth to the page. When `--auth` is set without a value, a fresh 6-digit code is generated on each start and printed in the banner:
+
+```
+Russian Loto game server
+  Cards in game: 50
+  Auth code: 384715   (enter as password; username can be anything)
+  Local:   http://127.0.0.1:8000
+  Network: http://192.168.1.42:8000   <- open this on your phone
+```
+
+When you open the URL on your phone, the browser shows its native password prompt. Enter the code as the password (any value, including empty, works as username). Browsers remember Basic auth credentials per origin, so you only type the code once per device until the next server restart. Use `--auth-code` if you want a stable code across restarts so you do not have to re-login.
+
+The code is a cryptographically random 6-digit number (10⁶ combinations). It is not bank-grade security -- it is enough to keep casual observers out, especially when you expose the server publicly via a tunnel (see below).
+
+#### Exposing the server over the internet
+
+If you want to reach the game from outside your local network (for example, playing with remote friends, or avoiding flaky Wi-Fi), the simplest path is `cloudflared tunnel --url http://localhost:8000` running alongside `loto serve`. It gives you a temporary `*.trycloudflare.com` URL tunneled to your local server. No code changes, no Cloudflare account, no deploy process. Combine it with `--auth` so the public URL is not viewable by anyone who stumbles across it.
+
 ### Generate without registering
 
 ```bash
