@@ -198,3 +198,172 @@ class TestRegistry:
             reg = Registry(path)
             assert reg.is_printed("aabbccdd", "stl")
             assert reg.get_formats("aabbccdd") == ["stl"]
+
+
+class TestRows:
+    def test_register_stores_full_grid(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            card = generate_card()
+            reg.register(card, "pdf")
+            rows = reg.get_rows(card_id(card))
+            assert rows == [list(r) for r in card]
+
+    def test_rows_have_three_rows_of_nine_with_nones(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            card = generate_card()
+            reg.register(card, "pdf")
+            rows = reg.get_rows(card_id(card))
+            assert len(rows) == 3
+            for row in rows:
+                assert len(row) == 9
+            # Each row has exactly 5 numbers and 4 Nones
+            for row in rows:
+                assert sum(1 for c in row if c is not None) == 5
+                assert sum(1 for c in row if c is None) == 4
+
+    def test_rows_persisted_to_json_as_null(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            card = generate_card()
+            cid = card_id(card)
+            reg.register(card, "pdf")
+            with open(path) as f:
+                raw = f.read()
+            assert "null" in raw  # JSON null markers for empty cells
+            data = json.loads(raw)
+            assert "rows" in data[cid]
+            assert len(data[cid]["rows"]) == 3
+            assert len(data[cid]["rows"][0]) == 9
+
+    def test_legacy_entry_has_none_rows(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            legacy = {
+                "aabbccdd": {
+                    "seq": 1,
+                    "numbers": [1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 21, 22, 23, 24, 25],
+                    "formats": ["pdf"],
+                    "printed_at": "2026-04-01",
+                },
+            }
+            with open(path, "w") as f:
+                json.dump(legacy, f)
+            reg = Registry(path)
+            assert reg.get_rows("aabbccdd") is None
+
+    def test_register_does_not_overwrite_existing_rows(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            card = generate_card()
+            cid = card_id(card)
+            reg.register(card, "pdf")
+            stored = reg.get_rows(cid)
+            # Re-register same card with new format -- rows must not change
+            reg.register(card, "stl")
+            assert reg.get_rows(cid) == stored
+
+    def test_register_adopts_rows_for_legacy_entry(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            card = generate_card()
+            cid = card_id(card)
+            legacy = {
+                cid: {
+                    "seq": 1,
+                    "numbers": card_numbers(card),
+                    "formats": ["pdf"],
+                    "printed_at": "2026-04-01",
+                },
+            }
+            with open(path, "w") as f:
+                json.dump(legacy, f)
+            reg = Registry(path)
+            assert reg.get_rows(cid) is None
+            reg.register(card, "stl")
+            assert reg.get_rows(cid) == [list(r) for r in card]
+
+    def test_set_rows_explicitly(self):
+        """Used by `loto fix-rows` to assign rows to a legacy entry."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            numbers = [3, 11, 12, 24, 25, 27, 34, 39, 42, 45, 54, 61, 75, 82, 88]
+            legacy = {
+                "b4238332": {
+                    "seq": 1,
+                    "numbers": numbers,
+                    "formats": ["pdf"],
+                    "printed_at": "2026-04-01",
+                },
+            }
+            with open(path, "w") as f:
+                json.dump(legacy, f)
+            reg = Registry(path)
+            grid = [
+                [None, 11, 24, 34, None, None, 61, None, 82],
+                [None, None, 25, 39, 42, 54, None, 75, None],
+                [3, 12, 27, None, 45, None, None, None, 88],
+            ]
+            reg.set_rows("b4238332", grid)
+            assert reg.get_rows("b4238332") == grid
+            # Persisted
+            reg2 = Registry(path)
+            assert reg2.get_rows("b4238332") == grid
+
+
+class TestDelete:
+    def test_delete_existing_returns_true(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            card = generate_card()
+            cid = card_id(card)
+            reg.register(card, "pdf")
+            assert reg.delete(cid) is True
+            assert reg.count() == 0
+            assert cid not in reg.all_ids()
+
+    def test_delete_nonexistent_returns_false(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            assert reg.delete("nonexistent") is False
+
+    def test_delete_persists_to_disk(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            cards = generate_unique_cards(3)
+            for c in cards:
+                reg.register(c, "pdf")
+            target_cid = card_id(cards[1])
+            reg.delete(target_cid)
+            reg2 = Registry(path)
+            assert reg2.count() == 2
+            assert target_cid not in reg2.all_ids()
+
+    def test_deleting_top_of_range_lets_new_gen_reuse_seqs(self):
+        """The user's migration workflow: delete 5..50 and re-gen them in place."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg = Registry(path)
+            cards = generate_unique_cards(5)
+            for c in cards:
+                reg.register(c, "pdf")
+            # Delete seqs 3, 4, 5
+            for s in (3, 4, 5):
+                cid, _ = reg.find_by_seq(s)
+                reg.delete(cid)
+            assert reg.count() == 2
+            # Next registration should get seq 3
+            existing_cids = {card_id(c) for c in cards[:2]}
+            new_card = generate_card()
+            while card_id(new_card) in existing_cids:
+                new_card = generate_card()
+            reg.register(new_card, "pdf")
+            assert reg.get_seq(card_id(new_card)) == 3

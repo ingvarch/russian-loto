@@ -64,6 +64,17 @@ class Registry:
             return []
         return entry.get("formats", [])
 
+    def get_rows(self, cid: str) -> list[list[int | None]] | None:
+        """Return the stored 3x9 row layout for a card, or None if absent.
+
+        Legacy entries created before the rows-storage feature have no layout
+        and return None. Use `set_rows` (or re-register) to assign one.
+        """
+        entry = self._data.get(cid)
+        if entry is None:
+            return None
+        return entry.get("rows")
+
     def find_by_seq(self, seq: int) -> tuple[str, dict] | None:
         """Find a card by its sequential number. Returns (cid, entry) or None."""
         for cid, entry in self._data.items():
@@ -72,21 +83,53 @@ class Registry:
         return None
 
     def register(self, card: list[list[int | None]], fmt: str) -> str:
-        """Register a card as printed in a given format. Returns the card ID."""
+        """Register a card as printed in a given format. Returns the card ID.
+
+        On first registration the row layout is captured from the card grid.
+        Subsequent re-registrations (e.g. adding a new format) do NOT overwrite
+        existing rows -- the first physical print determines the canonical
+        layout, and any later render of the same card must match it.
+
+        For legacy entries that have no rows yet, the first new registration
+        adopts the rows from the passed card grid.
+        """
         cid = card_id(card)
+        rows = [list(row) for row in card]
         if cid in self._data:
+            changed = False
             if fmt not in self._data[cid]["formats"]:
                 self._data[cid]["formats"].append(fmt)
+                changed = True
+            if self._data[cid].get("rows") is None:
+                self._data[cid]["rows"] = rows
+                changed = True
+            if changed:
                 self._save()
             return cid
         self._data[cid] = {
             "seq": self._next_seq(),
             "numbers": card_numbers(card),
+            "rows": rows,
             "formats": [fmt],
             "printed_at": date.today().isoformat(),
         }
         self._save()
         return cid
+
+    def set_rows(self, cid: str, rows: list[list[int | None]]) -> None:
+        """Explicitly set the row layout for a card. Raises if cid is unknown."""
+        if cid not in self._data:
+            raise KeyError(cid)
+        self._data[cid]["rows"] = [list(row) for row in rows]
+        self._save()
+
+    def delete(self, cid: str) -> bool:
+        """Remove an entry from the registry. Returns True if it existed."""
+        if cid not in self._data:
+            return False
+        del self._data[cid]
+        self._save()
+        return True
 
     def count(self) -> int:
         return len(self._data)
