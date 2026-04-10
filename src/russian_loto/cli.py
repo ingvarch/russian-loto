@@ -43,6 +43,29 @@ def _parse_seq_range(spec: str) -> list[int]:
     return sorted(seqs)
 
 
+def _format_card(rows: list[list[int | None]]) -> str:
+    """Render a 3x9 card grid as a box-drawing string for the terminal.
+
+    Single-digit numbers are right-padded to two characters so columns align.
+    Empty cells are blank.
+    """
+    def cell(n: int | None) -> str:
+        return f" {n:2d} " if n is not None else "    "
+
+    top = "┌" + "┬".join(["────"] * GRID_COLS) + "┐"
+    sep = "├" + "┼".join(["────"] * GRID_COLS) + "┤"
+    bot = "└" + "┴".join(["────"] * GRID_COLS) + "┘"
+    data = ["│" + "│".join(cell(c) for c in row) + "│" for row in rows]
+
+    lines = [top]
+    for i, d in enumerate(data):
+        if i > 0:
+            lines.append(sep)
+        lines.append(d)
+    lines.append(bot)
+    return "\n".join(lines)
+
+
 _EMPTY_MARKERS = frozenset({"_", ".", "-", "0", "null"})
 
 
@@ -172,6 +195,7 @@ Examples:
   loto gen -t stl -n 2 --no-seq     Generate without card number on sides
   loto gen -t stl --no-register     Test print without saving to registry
   loto ls                           List all previously printed cards
+  loto show --seq 1                 Show card #001 layout in the terminal
   loto reprint --seq 1 -t pdf       Reprint card #001 as PDF
   loto reprint --id aa7c4b83 -t stl Reprint card by hash as STL
   loto serve                        Start live game server (open URL on phone)
@@ -263,6 +287,41 @@ def cmd_ls() -> None:
         fmts = ",".join(formats)
         nums_str = ",".join(str(n) for n in numbers) if numbers else ""
         click.echo(f"  #{seq:03d}  {fmts:<7s}  {cid}  [{nums_str}]")
+
+
+@main.command("show", cls=_RawEpilogCommand, epilog=EXAMPLES)
+@click.option("--seq", type=int, default=None, help="Card sequential number (e.g. 1).")
+@click.option("--id", "card_hash", type=str, default=None, help="Card hash ID (e.g. aa7c4b83).")
+def cmd_show(seq: int | None, card_hash: str | None) -> None:
+    """Show a card's row layout in the terminal."""
+    if seq is None and card_hash is None:
+        raise click.UsageError("Provide either --seq or --id to identify the card.")
+    if seq is not None and card_hash is not None:
+        raise click.UsageError("Provide only one of --seq or --id, not both.")
+
+    registry = Registry()
+
+    if seq is not None:
+        result = registry.find_by_seq(seq)
+        if result is None:
+            raise click.ClickException(f"Card with seq #{seq:03d} not found.")
+        cid, _ = result
+    else:
+        if registry.get_seq(card_hash) is None:
+            raise click.ClickException(f"Card with id {card_hash} not found.")
+        cid = card_hash
+
+    rows = registry.get_rows(cid)
+    if rows is None:
+        raise click.ClickException(
+            f"Card #{registry.get_seq(cid):03d} {cid} has no stored row layout. "
+            f"Run `loto fix-rows --seq {registry.get_seq(cid)}` first.",
+        )
+
+    card_seq = registry.get_seq(cid)
+    formats = ",".join(registry.get_formats(cid)) or "-"
+    click.echo(f"#{card_seq:03d}  {cid}  [{formats}]")
+    click.echo(_format_card(rows))
 
 
 @main.command("reprint", cls=_RawEpilogCommand, epilog=EXAMPLES)

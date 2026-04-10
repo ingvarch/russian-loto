@@ -79,6 +79,28 @@ Printed cards (6):
 
 Shows all registered cards with sequential number, formats, hash ID, and the numbers on the card.
 
+### Show a card in the terminal
+
+```bash
+loto show --seq 1                # by sequential number
+loto show --id b4238332          # by hash ID
+```
+
+Prints the card's stored layout as a box-drawing grid, with single-digit numbers padded so columns align and empty cells left blank. Useful for sanity-checking against a physical card or quickly inspecting what will go to print before running `reprint`.
+
+```
+#001  b4238332  [stl,pdf]
+┌────┬────┬────┬────┬────┬────┬────┬────┬────┐
+│    │ 11 │ 24 │ 34 │    │    │ 61 │    │ 82 │
+├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+│    │    │ 25 │ 39 │ 42 │ 54 │    │ 75 │    │
+├────┼────┼────┼────┼────┼────┼────┼────┼────┤
+│  3 │ 12 │ 27 │    │ 45 │    │    │    │ 88 │
+└────┴────┴────┴────┴────┴────┴────┴────┴────┘
+```
+
+If the card is a legacy entry without a stored layout, `show` refuses to render and points you at `loto fix-rows --seq N`.
+
 ### Reprint a card in another format
 
 ```bash
@@ -206,7 +228,7 @@ Both modes include a double border frame (thick outer + thin inner with gap) and
 ```
 src/russian_loto/
     card.py             -- card generation logic
-    cli.py              -- CLI entry point (gen, ls, reprint, serve, fix-rows, rm)
+    cli.py              -- CLI entry point (gen, ls, show, reprint, serve, fix-rows, rm)
     constants.py        -- shared grid constants and column ranges
     registry.py         -- printed card registry (JSON file with row layouts)
     render.py           -- PDF rendering with Pillow

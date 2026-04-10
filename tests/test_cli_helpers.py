@@ -2,7 +2,7 @@
 
 import pytest
 
-from russian_loto.cli import _parse_row_input, _parse_seq_range
+from russian_loto.cli import _format_card, _parse_row_input, _parse_seq_range
 
 
 class TestParseSeqRange:
@@ -225,3 +225,46 @@ class TestParseRowInput:
                     "3 12 27 _ 45 _ _ _ 88",
                 ],
             )
+
+
+class TestFormatCard:
+    ROWS = [
+        [None, 11, 24, 34, None, None, 61, None, 82],
+        [None, None, 25, 39, 42, 54, None, 75, None],
+        [3, 12, 27, None, 45, None, None, None, 88],
+    ]
+
+    def test_exact_box_drawing_layout(self):
+        expected = (
+            "┌────┬────┬────┬────┬────┬────┬────┬────┬────┐\n"
+            "│    │ 11 │ 24 │ 34 │    │    │ 61 │    │ 82 │\n"
+            "├────┼────┼────┼────┼────┼────┼────┼────┼────┤\n"
+            "│    │    │ 25 │ 39 │ 42 │ 54 │    │ 75 │    │\n"
+            "├────┼────┼────┼────┼────┼────┼────┼────┼────┤\n"
+            "│  3 │ 12 │ 27 │    │ 45 │    │    │    │ 88 │\n"
+            "└────┴────┴────┴────┴────┴────┴────┴────┴────┘"
+        )
+        assert _format_card(self.ROWS) == expected
+
+    def test_no_none_or_null_leakage(self):
+        out = _format_card(self.ROWS)
+        assert "None" not in out
+        assert "null" not in out
+
+    def test_all_15_numbers_present(self):
+        out = _format_card(self.ROWS)
+        for n in [3, 11, 12, 24, 25, 27, 34, 39, 42, 45, 54, 61, 75, 82, 88]:
+            assert str(n) in out
+
+    def test_single_digit_padded_to_two_chars(self):
+        out = _format_card(self.ROWS)
+        # Card #001 has "3" in row 3 col 0 -- it should appear as " 3 " inside
+        # the cell, never as just "3 " with no leading space.
+        assert "│  3 │" in out
+
+    def test_lines_all_same_width(self):
+        out = _format_card(self.ROWS)
+        widths = {len(line) for line in out.split("\n")}
+        # All visible lines (top, data, separator, data, separator, data, bottom)
+        # must be the same printable width. Box-drawing chars are 1 column each.
+        assert len(widths) == 1, f"inconsistent line widths: {widths}"
