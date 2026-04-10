@@ -129,6 +129,76 @@
   }
   .close-chip:active { transform: scale(0.95); background: var(--accent); color: var(--accent-text); }
 
+  .payout-section {
+    padding: 8px 12px 4px;
+    max-width: 600px; margin: 0 auto;
+  }
+  .payout-section.hidden { display: none; }
+  .payout-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    padding: 8px 4px 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .payout-title .total {
+    color: var(--text);
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .payout-grid {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .payout-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 14px;
+  }
+  .payout-row .payout-level { font-weight: 600; }
+  .payout-row .payout-winners {
+    color: var(--text-dim);
+    font-size: 13px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .payout-row .payout-amount {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .payout-row.level-1 { border-left: 3px solid var(--level1); }
+  .payout-row.level-2 { border-left: 3px solid var(--level2); }
+  .payout-row.level-3 { border-left: 3px solid var(--level3); }
+  .payout-row.pending { border-style: dashed; }
+  .payout-row.pending .payout-winners { color: var(--level3); font-weight: 600; }
+  .payout-row.unclaimed .payout-winners { color: var(--text-dim); font-style: italic; }
+  .payout-row .chip-sm {
+    display: inline-block;
+    padding: 1px 6px;
+    background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-right: 4px;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+  }
+
   .log-section { padding: 0 12px 24px; max-width: 600px; margin: 0 auto; }
   .log-title {
     font-size: 13px; font-weight: 600; text-transform: uppercase;
@@ -196,6 +266,122 @@
   .btn-cancel { background: var(--border); color: var(--text); }
   .btn-confirm { background: var(--accent); color: var(--accent-text); }
   .btn-danger { background: var(--level3); color: white; }
+
+  /* New-game form modal -- bigger than confirm modals to fit the form */
+  .modal.modal-wide { max-width: 400px; }
+  .modal-form { display: flex; flex-direction: column; gap: 14px; margin: 10px 0 18px; }
+  .form-row { display: flex; flex-direction: column; gap: 6px; }
+  .form-row label {
+    font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-dim);
+  }
+  .form-row input[type="number"] {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+    font-family: inherit;
+    -moz-appearance: textfield;
+  }
+  .form-row input[type="number"]::-webkit-outer-spin-button,
+  .form-row input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  .form-row input[type="number"]:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .pct-inputs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .pct-inputs .form-row label { font-size: 10px; }
+  .preset-buttons { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .preset-buttons button {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 4px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .preset-buttons button:active { background: var(--border); }
+  .preset-buttons button.active {
+    background: var(--accent);
+    color: var(--accent-text);
+    border-color: var(--accent);
+  }
+  .split-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .split-row input[type="checkbox"] {
+    width: 18px; height: 18px;
+    accent-color: var(--accent);
+    margin: 0;
+  }
+  .split-row .split-label { font-size: 14px; font-weight: 500; }
+  .split-row .split-hint { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+  .preview {
+    font-size: 12px;
+    color: var(--text-dim);
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+  }
+  .preview.hidden { display: none; }
+  .preview .preview-title {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    font-weight: 600; color: var(--text-dim); margin-bottom: 4px;
+  }
+  .preview .preview-row { display: flex; justify-content: space-between; }
+  .form-error {
+    font-size: 12px;
+    color: var(--level3);
+    padding: 0 2px;
+    min-height: 16px;
+  }
+
+  /* Tiebreak modal -- shown when split=off and a level was reached by multiple
+     cards on the same call. The grid is disabled while this is open. */
+  .tiebreak-candidates {
+    display: flex; flex-direction: column; gap: 8px; margin: 12px 0 16px;
+  }
+  .tiebreak-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--bg);
+    border: 2px solid var(--accent);
+    color: var(--text);
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .tiebreak-btn:active { background: var(--accent); color: var(--accent-text); }
+  .tiebreak-btn .tiebreak-cid {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+  .grid.blocked { pointer-events: none; opacity: 0.4; }
 
   .sheet-backdrop {
     position: fixed; inset: 0;
@@ -291,7 +477,35 @@
     font-family: ui-monospace, "SF Mono", monospace;
     color: var(--text-dim);
     font-size: 13px;
-    margin-bottom: 28px;
+    margin-bottom: 16px;
+  }
+  .win-amount {
+    margin: 0 0 24px;
+    padding: 14px 16px;
+    background: color-mix(in srgb, var(--level3) 12%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--level3) 40%, var(--surface));
+    border-radius: 12px;
+  }
+  .win-amount.hidden { display: none; }
+  .win-amount-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+  .win-amount-value {
+    font-size: 32px;
+    font-weight: 900;
+    color: var(--level3);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    margin-top: 4px;
+  }
+  .win-amount-note {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 4px;
   }
   .win-actions { display: flex; flex-direction: column; gap: 10px; }
   .win-actions button {
@@ -333,6 +547,14 @@
   <span class="close-list" id="close-list"></span>
 </section>
 
+<section class="payout-section hidden" id="payout-section">
+  <div class="payout-title">
+    <span>Банк</span>
+    <span class="total" id="payout-total">0</span>
+  </div>
+  <div class="payout-grid" id="payout-grid"></div>
+</section>
+
 <section class="log-section">
   <div class="log-title">События</div>
   <div id="log"></div>
@@ -349,13 +571,65 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="confirm-reset">
-  <div class="modal">
-    <p class="modal-title">Сбросить текущую игру?</p>
+<div class="modal-backdrop" id="new-game-modal">
+  <div class="modal modal-wide">
+    <p class="modal-title">Новая игра</p>
     <p class="modal-text">Все отмеченные числа и события будут удалены.</p>
+
+    <div class="modal-form">
+      <div class="form-row">
+        <label>Банк (0 — без денег)</label>
+        <input type="number" id="ng-jackpot" min="0" step="1" value="0" inputmode="numeric">
+      </div>
+
+      <div class="form-row">
+        <label>Пресет</label>
+        <div class="preset-buttons" id="ng-presets">
+          <button type="button" data-preset="classic" data-pct="10,25,65">Классика</button>
+          <button type="button" data-preset="no-one" data-pct="0,30,70">Без 1-й линии</button>
+          <button type="button" data-preset="custom">Свой</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Проценты по уровням (сумма = 100)</label>
+        <div class="pct-inputs">
+          <div class="form-row">
+            <label>одна линия</label>
+            <input type="number" id="ng-pct1" min="0" max="100" step="1" value="10" inputmode="numeric">
+          </div>
+          <div class="form-row">
+            <label>две линии</label>
+            <input type="number" id="ng-pct2" min="0" max="100" step="1" value="25" inputmode="numeric">
+          </div>
+          <div class="form-row">
+            <label>полное лото</label>
+            <input type="number" id="ng-pct3" min="0" max="100" step="1" value="65" inputmode="numeric">
+          </div>
+        </div>
+      </div>
+
+      <label class="split-row">
+        <input type="checkbox" id="ng-split" checked>
+        <div>
+          <div class="split-label">Делить поровну при ничьих</div>
+          <div class="split-hint">Если выключено — ведущий выбирает победителя вручную.</div>
+        </div>
+      </label>
+
+      <div class="preview hidden" id="ng-preview">
+        <div class="preview-title">Предварительная разбивка</div>
+        <div class="preview-row"><span>одна линия</span><span id="ng-preview-1">0</span></div>
+        <div class="preview-row"><span>две линии</span><span id="ng-preview-2">0</span></div>
+        <div class="preview-row"><span>полное лото</span><span id="ng-preview-3">0</span></div>
+      </div>
+
+      <div class="form-error" id="ng-error"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn-cancel" data-action="cancel">Отмена</button>
-      <button class="btn-danger" data-action="confirm">Сбросить</button>
+      <button class="btn-confirm" data-action="confirm">Начать игру</button>
     </div>
   </div>
 </div>
@@ -371,11 +645,24 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="tiebreak-modal">
+  <div class="modal">
+    <p class="modal-title" id="tiebreak-title">Ничья на уровне</p>
+    <p class="modal-text" id="tiebreak-text">Несколько билетов закрыли уровень одновременно. Проведи мини-испытание и выбери победителя.</p>
+    <div class="tiebreak-candidates" id="tiebreak-candidates"></div>
+  </div>
+</div>
+
 <div class="win-backdrop" id="win-backdrop">
   <div class="win-modal">
     <div class="win-title">Полное лото!</div>
     <div class="win-seq" id="win-seq">#000</div>
     <div class="win-cid" id="win-cid"></div>
+    <div class="win-amount hidden" id="win-amount">
+      <div class="win-amount-label">Выигрыш</div>
+      <div class="win-amount-value" id="win-amount-value">0</div>
+      <div class="win-amount-note hidden" id="win-amount-note"></div>
+    </div>
     <div class="win-actions">
       <button class="btn-continue" id="win-continue-btn">Продолжить игру</button>
       <button class="btn-new-game" id="win-new-game-btn">Новая игра</button>
@@ -408,12 +695,17 @@
   // ---- State ----
   let state = loadState() || freshState();
 
-  function freshState() {
-    return {
+  function freshState(overrides) {
+    const base = {
       called: [],            // sorted array of called numbers
-      events: [],            // [{ts, cid, seq, level}], newest at index 0
+      events: [],            // [{ts, cid, seq, level, callCount}], newest at index 0
       cardLevel: {},         // cid -> current level (0..3)
+      jackpot: 0,            // total pot, 0 = jackpot feature disabled
+      percentages: [10, 25, 65],     // percentages per level, must sum to 100
+      split: true,           // on ties: true = split evenly, false = host picks one
+      tiebreakResolutions: {},       // {"<level>-<callCount>": "<cid>"} -- chosen winner per tie
     };
+    return Object.assign(base, overrides || {});
   }
 
   function loadState() {
@@ -422,6 +714,11 @@
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (!parsed || !Array.isArray(parsed.called)) return null;
+      // Back-fill fields added in later versions so old persisted state keeps working.
+      if (parsed.jackpot === undefined) parsed.jackpot = 0;
+      if (!Array.isArray(parsed.percentages)) parsed.percentages = [10, 25, 65];
+      if (parsed.split === undefined) parsed.split = true;
+      if (!parsed.tiebreakResolutions) parsed.tiebreakResolutions = {};
       return parsed;
     } catch (e) {
       return null;
@@ -476,10 +773,118 @@
     return CARDS.filter((card) => isCardClose(card, called));
   }
 
+  // ---- Jackpot / payouts ----
+  // Returns an object describing the status of each of the three levels given
+  // the current state. Pure function of state + CARDS.
+  //
+  // For each level, one of four statuses:
+  //   'disabled'  -> jackpot == 0, panel hidden
+  //   'unclaimed' -> nobody has reached this level yet
+  //   'pending'   -> multiple cards reached simultaneously in split=false mode
+  //                  and the host has not yet picked a winner
+  //   'paid'      -> winners determined, amounts known
+  //
+  // Remainders from integer division at levels 1 and 2 roll into level 3's base.
+  // Remainders at level 3 go to the lowest-seq winner so no unit is ever lost.
+  function computePayouts() {
+    if (!state.jackpot || state.jackpot <= 0) {
+      return { status: 'disabled' };
+    }
+
+    const pct = state.percentages || [10, 25, 65];
+    const base1 = Math.floor((state.jackpot * pct[0]) / 100);
+    const base2 = Math.floor((state.jackpot * pct[1]) / 100);
+    // base3 absorbs any integer-percent rounding so the three bases always sum
+    // to the jackpot exactly.
+    const base3Initial = state.jackpot - base1 - base2;
+
+    const p1 = computeLevelPayout(1, base1);
+    const p2 = computeLevelPayout(2, base2);
+
+    let remainderRoll = 0;
+    if (p1.status === 'paid') remainderRoll += p1.remainder;
+    if (p2.status === 'paid') remainderRoll += p2.remainder;
+    const base3 = base3Initial + remainderRoll;
+
+    const p3 = computeLevelPayout(3, base3, /* absorbFinalRemainder */ true);
+
+    return {
+      status: 'active',
+      jackpot: state.jackpot,
+      base1: base1,
+      base2: base2,
+      base3: base3,           // effective, including rolled-in remainders
+      base3Initial: base3Initial,
+      level1: p1,
+      level2: p2,
+      level3: p3,
+    };
+  }
+
+  // Helper: figure out who won a given level (if anyone) based on events and
+  // tiebreak resolutions. Returns:
+  //   { status: 'unclaimed' }                                    -- no events yet
+  //   { status: 'pending', candidates: [card, ...] }             -- tied, no resolution
+  //   { status: 'paid', winners: [card, ...], perPerson, remainder }
+  function computeLevelPayout(level, base, absorbFinalRemainder) {
+    const levelEvents = state.events.filter((e) => e.level === level);
+    if (levelEvents.length === 0) {
+      return { status: 'unclaimed', base: base };
+    }
+    const minCall = Math.min.apply(
+      null,
+      levelEvents.map((e) => e.callCount === undefined ? Infinity : e.callCount),
+    );
+    const firstEvents = levelEvents.filter((e) => (e.callCount === undefined ? Infinity : e.callCount) === minCall);
+
+    let winnerCards;
+    if (firstEvents.length === 1 || state.split) {
+      winnerCards = firstEvents
+        .map((e) => CARDS.find((c) => c.cid === e.cid))
+        .filter(Boolean);
+    } else {
+      // split=false and we have a tie -- check if host has resolved it.
+      const key = level + "-" + minCall;
+      const resolvedCid = (state.tiebreakResolutions || {})[key];
+      if (!resolvedCid) {
+        const candidates = firstEvents
+          .map((e) => CARDS.find((c) => c.cid === e.cid))
+          .filter(Boolean);
+        return { status: 'pending', base: base, candidates: candidates, tiebreakKey: key };
+      }
+      const winner = CARDS.find((c) => c.cid === resolvedCid);
+      winnerCards = winner ? [winner] : [];
+    }
+
+    if (winnerCards.length === 0) {
+      return { status: 'unclaimed', base: base };
+    }
+    const perPerson = Math.floor(base / winnerCards.length);
+    const paid = perPerson * winnerCards.length;
+    let remainder = base - paid;
+
+    // At the final level, the remainder cannot roll further, so it goes to
+    // the first winner by seq. This keeps the total paid = base exactly.
+    if (absorbFinalRemainder && remainder > 0) {
+      winnerCards.sort((a, b) => a.seq - b.seq);
+      // This will be rendered specially: the first winner gets perPerson + remainder.
+    }
+
+    return {
+      status: 'paid',
+      base: base,
+      winners: winnerCards.slice().sort((a, b) => a.seq - b.seq),
+      perPerson: perPerson,
+      remainder: remainder,
+      absorbFinalRemainder: !!absorbFinalRemainder,
+    };
+  }
+
   function recomputeAndEmit() {
     const called = calledSet();
     const newLevels = {};
     const ts = nowHHMM();
+    const callCount = state.called.length;
     let bingoCard = null;
 
     for (const card of CARDS) {
@@ -495,6 +900,7 @@
             cid: card.cid,
             seq: card.seq,
             level: lvl,
+            callCount: callCount,
           });
           // Track the first card to cross bingo during this recompute so the
           // caller can trigger the win overlay. Iteration order is seq-ascending
@@ -506,6 +912,14 @@
         state.events = state.events.filter(
           (e) => !(e.cid === card.cid && e.level > next)
         );
+        // Drop any tiebreak resolutions that refer to rolled-back levels for this card.
+        const res = state.tiebreakResolutions || {};
+        for (const key of Object.keys(res)) {
+          const lvlStr = key.split("-")[0];
+          if (parseInt(lvlStr, 10) > next && res[key] === card.cid) {
+            delete res[key];
+          }
+        }
       }
     }
     state.cardLevel = newLevels;
@@ -524,7 +938,15 @@
     const bingoCard = recomputeAndEmit();
     saveState();
     render();
-    if (bingoCard) showWin(bingoCard);
+    if (bingoCard) {
+      // If level-3 payout is pending (unresolved tiebreak), defer the overlay
+      // until the host picks a winner -- otherwise we'd show the wrong card.
+      // resolveTiebreak will call showWin() with the correct winner.
+      const payout = computePayouts();
+      if (payout.status !== 'active' || payout.level3.status !== 'pending') {
+        showWin(bingoCard);
+      }
+    }
   }
 
   function uncallNumber(n) {
@@ -538,12 +960,6 @@
     render();
   }
 
-  function resetGame() {
-    state = freshState();
-    saveState();
-    render();
-    closeWin();
-  }
 
   // ---- Rendering ----
   const gridEl = document.getElementById("number-grid");
@@ -644,10 +1060,99 @@
     }
   }
 
+  function renderPayout() {
+    const section = document.getElementById("payout-section");
+    const payout = computePayouts();
+    if (payout.status !== 'active') {
+      section.classList.add("hidden");
+      return;
+    }
+    section.classList.remove("hidden");
+
+    const total = payout.base1 + payout.base2 + payout.base3;
+    document.getElementById("payout-total").textContent = formatAmount(total);
+
+    const grid = document.getElementById("payout-grid");
+    grid.innerHTML = "";
+    grid.appendChild(renderPayoutRow(1, "одна линия", payout.level1));
+    grid.appendChild(renderPayoutRow(2, "две линии", payout.level2));
+    grid.appendChild(renderPayoutRow(3, "полное лото", payout.level3));
+  }
+
+  function renderPayoutRow(level, label, info) {
+    const row = document.createElement("div");
+    row.className = "payout-row level-" + level;
+
+    const levelEl = document.createElement("div");
+    levelEl.className = "payout-level";
+    levelEl.textContent = label;
+
+    const winnersEl = document.createElement("div");
+    winnersEl.className = "payout-winners";
+
+    const amountEl = document.createElement("div");
+    amountEl.className = "payout-amount";
+
+    if (info.status === 'unclaimed') {
+      row.classList.add("unclaimed");
+      winnersEl.textContent = "ждёт";
+      amountEl.textContent = formatAmount(info.base);
+    } else if (info.status === 'pending') {
+      row.classList.add("pending");
+      const labelSpan = document.createElement("span");
+      labelSpan.textContent = "ничья: ";
+      winnersEl.appendChild(labelSpan);
+      info.candidates.forEach((card) => {
+        const chip = document.createElement("span");
+        chip.className = "chip-sm";
+        chip.textContent = "#" + String(card.seq).padStart(3, "0");
+        chip.addEventListener("click", () => openSheet(card.cid));
+        winnersEl.appendChild(chip);
+      });
+      amountEl.textContent = formatAmount(info.base);
+    } else if (info.status === 'paid') {
+      info.winners.forEach((card) => {
+        const chip = document.createElement("span");
+        chip.className = "chip-sm";
+        chip.textContent = "#" + String(card.seq).padStart(3, "0");
+        chip.addEventListener("click", () => openSheet(card.cid));
+        winnersEl.appendChild(chip);
+      });
+      const perPersonText = formatAmount(info.perPerson);
+      if (info.winners.length > 1) {
+        amountEl.textContent = perPersonText + " × " + info.winners.length;
+      } else {
+        // Single winner: they get perPerson + remainder (at final level) or just base
+        const amt = info.perPerson + (info.absorbFinalRemainder ? info.remainder : 0);
+        amountEl.textContent = formatAmount(amt);
+      }
+      if (info.absorbFinalRemainder && info.winners.length > 1 && info.remainder > 0) {
+        // First winner gets the remainder bonus
+        const note = document.createElement("div");
+        note.style.fontSize = "11px";
+        note.style.color = "var(--text-dim)";
+        note.style.marginTop = "2px";
+        note.textContent = "#" + String(info.winners[0].seq).padStart(3, "0") + " +" + info.remainder;
+        amountEl.appendChild(note);
+      }
+    }
+
+    row.appendChild(levelEl);
+    row.appendChild(winnersEl);
+    row.appendChild(amountEl);
+    return row;
+  }
+
+  function formatAmount(n) {
+    return (n || 0).toLocaleString("ru-RU");
+  }
+
   function render() {
     renderCells();
     renderClose();
+    renderPayout();
     renderLog();
+    maybeShowTiebreak();
   }
 
   // ---- Modals ----
@@ -679,17 +1184,246 @@
       pendingUncall = null;
     }
   });
-  setupModal("confirm-reset", resetGame);
   setupModal("confirm-win-continue", closeWin);
 
-  document.getElementById("new-game-btn").addEventListener("click", () => {
-    document.getElementById("confirm-reset").classList.add("open");
+  // ---- New game modal ----
+  function openNewGameModal() {
+    // Pre-fill form with current settings (or defaults if none).
+    document.getElementById("ng-jackpot").value = state.jackpot || 0;
+    document.getElementById("ng-pct1").value = (state.percentages && state.percentages[0]) || 10;
+    document.getElementById("ng-pct2").value = (state.percentages && state.percentages[1]) || 25;
+    document.getElementById("ng-pct3").value = (state.percentages && state.percentages[2]) || 65;
+    document.getElementById("ng-split").checked = state.split !== false;
+    document.getElementById("ng-error").textContent = "";
+    syncPresetActive();
+    updateNewGamePreview();
+    document.getElementById("new-game-modal").classList.add("open");
+  }
+
+  function closeNewGameModal() {
+    document.getElementById("new-game-modal").classList.remove("open");
+  }
+
+  function readNewGameForm() {
+    const jackpot = parseInt(document.getElementById("ng-jackpot").value, 10) || 0;
+    const pct1 = parseInt(document.getElementById("ng-pct1").value, 10);
+    const pct2 = parseInt(document.getElementById("ng-pct2").value, 10);
+    const pct3 = parseInt(document.getElementById("ng-pct3").value, 10);
+    const split = document.getElementById("ng-split").checked;
+    return { jackpot, percentages: [pct1, pct2, pct3], split };
+  }
+
+  function validateNewGameForm() {
+    const form = readNewGameForm();
+    const err = document.getElementById("ng-error");
+    if (form.jackpot < 0 || isNaN(form.jackpot)) {
+      err.textContent = "Банк должен быть 0 или больше.";
+      return null;
+    }
+    const pcts = form.percentages;
+    if (pcts.some((p) => isNaN(p) || p < 0 || p > 100)) {
+      err.textContent = "Проценты должны быть от 0 до 100.";
+      return null;
+    }
+    const sum = pcts[0] + pcts[1] + pcts[2];
+    if (sum !== 100) {
+      err.textContent = "Сумма процентов должна быть ровно 100 (сейчас " + sum + ").";
+      return null;
+    }
+    err.textContent = "";
+    return form;
+  }
+
+  function updateNewGamePreview() {
+    const form = readNewGameForm();
+    const preview = document.getElementById("ng-preview");
+    if (form.jackpot > 0 && form.percentages.every((p) => !isNaN(p))) {
+      const sum = form.percentages[0] + form.percentages[1] + form.percentages[2];
+      if (sum === 100) {
+        const b1 = Math.floor((form.jackpot * form.percentages[0]) / 100);
+        const b2 = Math.floor((form.jackpot * form.percentages[1]) / 100);
+        const b3 = form.jackpot - b1 - b2;
+        document.getElementById("ng-preview-1").textContent = b1.toLocaleString("ru-RU");
+        document.getElementById("ng-preview-2").textContent = b2.toLocaleString("ru-RU");
+        document.getElementById("ng-preview-3").textContent = b3.toLocaleString("ru-RU");
+        preview.classList.remove("hidden");
+        return;
+      }
+    }
+    preview.classList.add("hidden");
+  }
+
+  function applyPreset(btn) {
+    const pctStr = btn.dataset.pct;
+    if (pctStr) {
+      const pcts = pctStr.split(",").map((s) => parseInt(s, 10));
+      document.getElementById("ng-pct1").value = pcts[0];
+      document.getElementById("ng-pct2").value = pcts[1];
+      document.getElementById("ng-pct3").value = pcts[2];
+    }
+    syncPresetActive();
+    updateNewGamePreview();
+    validateNewGameForm();
+  }
+
+  function syncPresetActive() {
+    const p1 = parseInt(document.getElementById("ng-pct1").value, 10);
+    const p2 = parseInt(document.getElementById("ng-pct2").value, 10);
+    const p3 = parseInt(document.getElementById("ng-pct3").value, 10);
+    const current = [p1, p2, p3].join(",");
+    const buttons = document.querySelectorAll("#ng-presets button");
+    let matched = false;
+    buttons.forEach((btn) => {
+      if (btn.dataset.pct === current) {
+        btn.classList.add("active");
+        matched = true;
+      } else {
+        btn.classList.remove("active");
+      }
+    });
+    if (!matched) {
+      // Highlight "Свой" if no preset matches
+      const customBtn = document.querySelector('#ng-presets button[data-preset="custom"]');
+      if (customBtn) customBtn.classList.add("active");
+    }
+  }
+
+  // Wire up the form inputs and preset buttons.
+  ["ng-jackpot", "ng-pct1", "ng-pct2", "ng-pct3"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", () => {
+      syncPresetActive();
+      updateNewGamePreview();
+      validateNewGameForm();
+    });
   });
+  document.querySelectorAll("#ng-presets button").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      applyPreset(btn);
+    });
+  });
+
+  const newGameModalEl = document.getElementById("new-game-modal");
+  newGameModalEl.querySelector('[data-action="cancel"]').addEventListener("click", closeNewGameModal);
+  newGameModalEl.querySelector('[data-action="confirm"]').addEventListener("click", () => {
+    const form = validateNewGameForm();
+    if (form === null) return;
+    state = freshState(form);
+    saveState();
+    render();
+    closeWin();
+    closeNewGameModal();
+  });
+  newGameModalEl.addEventListener("click", (ev) => {
+    if (ev.target === newGameModalEl) closeNewGameModal();
+  });
+
+  document.getElementById("new-game-btn").addEventListener("click", openNewGameModal);
+
+  // ---- Tiebreak modal ----
+  // Called from render(). If computePayouts reported a pending tiebreak and
+  // the tiebreak modal is not yet visible, show it. If there's no pending
+  // tiebreak and the modal is visible (e.g. the host just resolved it), close.
+  function maybeShowTiebreak() {
+    const modal = document.getElementById("tiebreak-modal");
+    const grid = document.getElementById("number-grid");
+    const payout = computePayouts();
+
+    // Find the first pending level (lowest level number wins).
+    let pending = null;
+    if (payout.status === 'active') {
+      for (const lvl of [1, 2, 3]) {
+        const p = payout["level" + lvl];
+        if (p && p.status === 'pending') {
+          pending = { level: lvl, info: p };
+          break;
+        }
+      }
+    }
+
+    if (!pending) {
+      modal.classList.remove("open");
+      grid.classList.remove("blocked");
+      return;
+    }
+
+    // Populate and show.
+    const levelLabel = LEVEL_LABELS[pending.level];
+    document.getElementById("tiebreak-title").textContent = "Ничья: " + levelLabel;
+    const candidatesEl = document.getElementById("tiebreak-candidates");
+    candidatesEl.innerHTML = "";
+    for (const card of pending.info.candidates) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "tiebreak-btn";
+      const seqSpan = document.createElement("span");
+      seqSpan.textContent = "#" + String(card.seq).padStart(3, "0");
+      const cidSpan = document.createElement("span");
+      cidSpan.className = "tiebreak-cid";
+      cidSpan.textContent = card.cid;
+      btn.appendChild(seqSpan);
+      btn.appendChild(cidSpan);
+      btn.addEventListener("click", () => resolveTiebreak(pending.info.tiebreakKey, card.cid));
+      candidatesEl.appendChild(btn);
+    }
+    modal.classList.add("open");
+    grid.classList.add("blocked");
+  }
+
+  function resolveTiebreak(key, cid) {
+    if (!state.tiebreakResolutions) state.tiebreakResolutions = {};
+    state.tiebreakResolutions[key] = cid;
+    saveState();
+    render();
+    // If we just resolved a level-3 tiebreak, the win overlay was deferred by
+    // callNumber and needs to fire now with the chosen winner.
+    const lvl = parseInt(key.split("-")[0], 10);
+    if (lvl === 3) {
+      const winner = CARDS.find((c) => c.cid === cid);
+      if (winner) showWin(winner);
+    }
+  }
 
   // ---- Win overlay ----
   function showWin(card) {
     document.getElementById("win-seq").textContent = "#" + String(card.seq).padStart(3, "0");
     document.getElementById("win-cid").textContent = card.cid;
+
+    // Show the winnings for this specific card when the jackpot is active
+    // and level 3 is paid out. For split ties, show the per-person share and
+    // the note about how many winners there are. The first winner by seq gets
+    // any rounding remainder added on top.
+    const amountEl = document.getElementById("win-amount");
+    const amountValueEl = document.getElementById("win-amount-value");
+    const noteEl = document.getElementById("win-amount-note");
+    const payout = computePayouts();
+    if (
+      payout.status === 'active' &&
+      payout.level3.status === 'paid' &&
+      payout.level3.winners.some((w) => w.cid === card.cid)
+    ) {
+      let amount = payout.level3.perPerson;
+      if (
+        payout.level3.absorbFinalRemainder &&
+        payout.level3.remainder > 0 &&
+        payout.level3.winners[0].cid === card.cid
+      ) {
+        amount += payout.level3.remainder;
+      }
+      amountValueEl.textContent = formatAmount(amount);
+      if (payout.level3.winners.length > 1) {
+        const others = payout.level3.winners.length - 1;
+        noteEl.textContent = "Ничья, доля из " + formatAmount(payout.level3.base) +
+          " (ещё " + others + " победител" + (others === 1 ? "ь" : "ей") + ")";
+        noteEl.classList.remove("hidden");
+      } else {
+        noteEl.classList.add("hidden");
+      }
+      amountEl.classList.remove("hidden");
+    } else {
+      amountEl.classList.add("hidden");
+    }
+
     document.getElementById("win-backdrop").classList.add("open");
   }
 
@@ -700,9 +1434,7 @@
   document.getElementById("win-continue-btn").addEventListener("click", () => {
     document.getElementById("confirm-win-continue").classList.add("open");
   });
-  document.getElementById("win-new-game-btn").addEventListener("click", () => {
-    document.getElementById("confirm-reset").classList.add("open");
-  });
+  document.getElementById("win-new-game-btn").addEventListener("click", openNewGameModal);
 
   // ---- Bottom sheet ----
   const sheet = document.getElementById("sheet");
