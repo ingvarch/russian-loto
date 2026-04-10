@@ -160,6 +160,18 @@ The code is a cryptographically random 6-digit number (10⁶ combinations). It i
 
 If you want to reach the game from outside your local network (for example, playing with remote friends, or avoiding flaky Wi-Fi), the simplest path is `cloudflared tunnel --url http://localhost:8000` running alongside `loto serve`. It gives you a temporary `*.trycloudflare.com` URL tunneled to your local server. No code changes, no Cloudflare account, no deploy process. Combine it with `--auth` so the public URL is not viewable by anyone who stumbles across it.
 
+`trycloudflare.com` is frequently present on phishing blocklists (ad blockers, family DNS, corporate DNS), so you may see `ERR_NAME_NOT_RESOLVED` on the phone. If that happens, switch the phone's DNS to `1.1.1.1` or use a named tunnel on your own domain instead: create a tunnel with `cloudflared tunnel create loto`, route DNS with `cloudflared tunnel route dns loto loto.yourdomain.com`, put a matching `~/.cloudflared/config.yml` in place, and run `cloudflared tunnel run`.
+
+#### One-command combined runner
+
+`bin/loto-game` starts both `loto serve` and `cloudflared tunnel run` in one terminal and takes them both down cleanly on Ctrl+C. It hardcodes `--port 8765` to match the named-tunnel `config.yml` shipped in the author's setup; change both sides if you use a different port. Any extra arguments are forwarded to `loto serve`:
+
+```bash
+bin/loto-game --auth-code 4242
+```
+
+Under the hood it calls `.venv/bin/loto` directly (skipping `uv run`, which does not forward signals to its child process), so you need `uv sync` to have been run at least once.
+
 ### Generate without registering
 
 ```bash
@@ -270,6 +282,7 @@ tests/
     test_cli_helpers.py -- pure-function tests for CLI parsers (seq range, row input)
 bin/
     loto                -- shell wrapper for uv run loto
+    loto-game           -- starts loto serve + cloudflared tunnel run together
 ```
 
 ## Running tests

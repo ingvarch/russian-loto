@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Run `loto serve` and `cloudflared tunnel run` together in one terminal.
+# Ctrl+C stops both cleanly.
+#
+# The port is fixed at 8765 to match ~/.cloudflared/config.yml.
+# Any extra arguments are forwarded to `loto serve`, so you can do:
+#   bin/loto-game --auth-code 4242
+#
+# We call the venv's `loto` entry point directly instead of going through
+# `uv run`, because `uv run` does not forward signals to the wrapped process
+# and Ctrl+C would not shut down `loto serve` cleanly. If the venv is missing,
+# run `uv sync` first.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+LOTO_BIN="$PROJECT_ROOT/.venv/bin/loto"
+LOTO_PORT="${LOTO_PORT:-8765}"
+
+if [[ ! -x "$LOTO_BIN" ]]; then
+    echo "error: $LOTO_BIN not found. Run 'uv sync' in the project root first." >&2
+    exit 1
+fi
+
+LOTO_PID=""
+CF_PID=""
+
+cleanup() {
+    # We send SIGTERM rather than SIGINT: some wrapping environments inherit
+    # SIG_IGN for SIGINT to children, which would make kill -INT a no-op.
+    # SIGTERM is the robust "stop now, gracefully" signal and is what any
+    # external process manager would send anyway. In a normal terminal Ctrl+C
+    # also still works because the tty delivers SIGINT to the whole foreground
+    # process group directly, and both children handle it themselves before
+    # this cleanup even runs.
+    if [[ -n "$LOTO_PID" ]] && kill -0 "$LOTO_PID" 2>/dev/null; then
+        kill -TERM "$LOTO_PID" 2>/dev/null || true
+    fi
+    if [[ -n "$CF_PID" ]] && kill -0 "$CF_PID" 2>/dev/null; then
+        kill -TERM "$CF_PID" 2>/dev/null || true
+    fi
+    wait 2>/dev/null || true
+}
+trap 'cleanup; exit 0' INT TERM
+trap cleanup EXIT
+
+"$LOTO_BIN" serve --port "$LOTO_PORT" "$@" &
+LOTO_PID=$!
+
+# Give loto a moment to bind the port before cloudflared starts probing,
+# otherwise the first few tunnel requests race with startup.
+sleep 0.5
+
+cloudflared tunnel run &
+CF_PID=$!
+
+wait
