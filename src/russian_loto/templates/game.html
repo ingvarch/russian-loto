@@ -175,7 +175,7 @@
     position: fixed; inset: 0;
     background: var(--modal-bg);
     display: none; align-items: center; justify-content: center;
-    z-index: 50;
+    z-index: 200;
     padding: 20px;
   }
   .modal-backdrop.open { display: flex; }
@@ -251,6 +251,64 @@
     background: var(--accent); color: var(--accent-text); border-color: var(--accent);
   }
 
+  .win-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0, 0, 0, 0.88);
+    display: none; align-items: center; justify-content: center;
+    z-index: 100;
+    padding: 24px;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .win-backdrop.open { display: flex; animation: fadeIn 0.25s ease-out; }
+  .win-modal {
+    background: var(--surface);
+    border: 2px solid var(--level3);
+    border-radius: 20px;
+    padding: 32px 24px 24px;
+    max-width: 360px; width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+    animation: winPulse 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  }
+  .win-title {
+    font-size: 28px;
+    font-weight: 900;
+    color: var(--level3);
+    letter-spacing: 1.5px;
+    margin: 0 0 20px;
+    text-transform: uppercase;
+  }
+  .win-seq {
+    font-size: 72px;
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .win-cid {
+    font-family: ui-monospace, "SF Mono", monospace;
+    color: var(--text-dim);
+    font-size: 13px;
+    margin-bottom: 28px;
+  }
+  .win-actions { display: flex; flex-direction: column; gap: 10px; }
+  .win-actions button {
+    padding: 14px; border-radius: 12px; border: none;
+    font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+  .win-actions .btn-continue { background: var(--border); color: var(--text); }
+  .win-actions .btn-continue:active { opacity: 0.7; }
+  .win-actions .btn-new-game { background: var(--level3); color: white; }
+  .win-actions .btn-new-game:active { opacity: 0.85; }
+
+  @keyframes winPulse {
+    0%   { transform: scale(0.7); opacity: 0; }
+    60%  { transform: scale(1.05); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
   @media (min-width: 700px) {
@@ -302,6 +360,29 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="confirm-win-continue">
+  <div class="modal">
+    <p class="modal-title">Продолжить игру?</p>
+    <p class="modal-text">Игра продолжится в текущем состоянии. Убедитесь, что учли победу.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" data-action="cancel">Отмена</button>
+      <button class="btn-confirm" data-action="confirm">Продолжить</button>
+    </div>
+  </div>
+</div>
+
+<div class="win-backdrop" id="win-backdrop">
+  <div class="win-modal">
+    <div class="win-title">Полное лото!</div>
+    <div class="win-seq" id="win-seq">#000</div>
+    <div class="win-cid" id="win-cid"></div>
+    <div class="win-actions">
+      <button class="btn-continue" id="win-continue-btn">Продолжить игру</button>
+      <button class="btn-new-game" id="win-new-game-btn">Новая игра</button>
+    </div>
+  </div>
+</div>
+
 <div class="sheet-backdrop" id="sheet-backdrop"></div>
 <div class="sheet" id="sheet">
   <div class="sheet-handle"></div>
@@ -322,7 +403,7 @@
 
   const CARDS = JSON.parse(document.getElementById("cards-data").textContent);
   const STORAGE_KEY = "loto-game-state";
-  const LEVEL_LABELS = { 1: "одна линия", 2: "две линии", 3: "БИНГО" };
+  const LEVEL_LABELS = { 1: "одна линия", 2: "две линии", 3: "ПОЛНОЕ ЛОТО" };
 
   // ---- State ----
   let state = loadState() || freshState();
@@ -399,6 +480,7 @@
     const called = calledSet();
     const newLevels = {};
     const ts = nowHHMM();
+    let bingoCard = null;
 
     for (const card of CARDS) {
       const prev = state.cardLevel[card.cid] || 0;
@@ -414,6 +496,10 @@
             seq: card.seq,
             level: lvl,
           });
+          // Track the first card to cross bingo during this recompute so the
+          // caller can trigger the win overlay. Iteration order is seq-ascending
+          // so ties resolve to the lowest seq, which is deterministic.
+          if (lvl === 3 && bingoCard === null) bingoCard = card;
         }
       } else if (next < prev) {
         // Reversed: drop log entries for levels above the new one
@@ -423,6 +509,7 @@
       }
     }
     state.cardLevel = newLevels;
+    return bingoCard;
   }
 
   function nowHHMM() {
@@ -434,15 +521,18 @@
     if (state.called.includes(n)) return;
     state.called.push(n);
     state.called.sort((a, b) => a - b);
-    recomputeAndEmit();
+    const bingoCard = recomputeAndEmit();
     saveState();
     render();
+    if (bingoCard) showWin(bingoCard);
   }
 
   function uncallNumber(n) {
     const idx = state.called.indexOf(n);
     if (idx === -1) return;
     state.called.splice(idx, 1);
+    // Uncall only decreases levels, so recomputeAndEmit never returns a bingo
+    // card here -- safe to ignore the return value.
     recomputeAndEmit();
     saveState();
     render();
@@ -452,6 +542,7 @@
     state = freshState();
     saveState();
     render();
+    closeWin();
   }
 
   // ---- Rendering ----
@@ -589,8 +680,27 @@
     }
   });
   setupModal("confirm-reset", resetGame);
+  setupModal("confirm-win-continue", closeWin);
 
   document.getElementById("new-game-btn").addEventListener("click", () => {
+    document.getElementById("confirm-reset").classList.add("open");
+  });
+
+  // ---- Win overlay ----
+  function showWin(card) {
+    document.getElementById("win-seq").textContent = "#" + String(card.seq).padStart(3, "0");
+    document.getElementById("win-cid").textContent = card.cid;
+    document.getElementById("win-backdrop").classList.add("open");
+  }
+
+  function closeWin() {
+    document.getElementById("win-backdrop").classList.remove("open");
+  }
+
+  document.getElementById("win-continue-btn").addEventListener("click", () => {
+    document.getElementById("confirm-win-continue").classList.add("open");
+  });
+  document.getElementById("win-new-game-btn").addEventListener("click", () => {
     document.getElementById("confirm-reset").classList.add("open");
   });
 
