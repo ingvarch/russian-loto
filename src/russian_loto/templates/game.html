@@ -97,6 +97,38 @@
     cursor: default; opacity: 0.3;
   }
 
+  .close-section {
+    padding: 6px 16px 4px;
+    max-width: 600px; margin: 0 auto;
+    display: flex; align-items: center; flex-wrap: wrap;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .close-section.hidden { display: none; }
+  .close-label {
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+    font-size: 11px;
+  }
+  .close-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .close-chip {
+    display: inline-block;
+    padding: 3px 10px;
+    background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    border-radius: 12px;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+    font-variant-numeric: tabular-nums;
+    transition: transform 0.05s;
+  }
+  .close-chip:active { transform: scale(0.95); background: var(--accent); color: var(--accent-text); }
+
   .log-section { padding: 0 12px 24px; max-width: 600px; margin: 0 auto; }
   .log-title {
     font-size: 13px; font-weight: 600; text-transform: uppercase;
@@ -238,6 +270,11 @@
   <div class="grid" id="number-grid"></div>
 </div>
 
+<section class="close-section hidden" id="close-section">
+  <span class="close-label" id="close-label">4 из 5 в линии:</span>
+  <span class="close-list" id="close-list"></span>
+</section>
+
 <section class="log-section">
   <div class="log-title">События</div>
   <div id="log"></div>
@@ -285,7 +322,7 @@
 
   const CARDS = JSON.parse(document.getElementById("cards-data").textContent);
   const STORAGE_KEY = "loto-game-state";
-  const LEVEL_LABELS = { 1: "первая линия", 2: "две линии", 3: "БИНГО" };
+  const LEVEL_LABELS = { 1: "одна линия", 2: "две линии", 3: "БИНГО" };
 
   // ---- State ----
   let state = loadState() || freshState();
@@ -336,6 +373,26 @@
       if (allClosed) lines += 1;
     }
     return lines;
+  }
+
+  // A card is "close" when it has at least one row that is 4/5 called -- i.e.
+  // one call away from closing a line. Already-closed rows don't count.
+  function isCardClose(card, called) {
+    for (const row of card.rows) {
+      let hit = 0;
+      let total = 0;
+      for (const n of row) {
+        if (n === null) continue;
+        total += 1;
+        if (called.has(n)) hit += 1;
+      }
+      if (total === 5 && hit === 4) return true;
+    }
+    return false;
+  }
+
+  function closeCards(called) {
+    return CARDS.filter((card) => isCardClose(card, called));
   }
 
   function recomputeAndEmit() {
@@ -472,8 +529,33 @@
     }
   }
 
+  function renderClose() {
+    const called = calledSet();
+    const close = closeCards(called);
+    const section = document.getElementById("close-section");
+    const label = document.getElementById("close-label");
+    const list = document.getElementById("close-list");
+    if (close.length === 0) {
+      section.classList.add("hidden");
+      list.innerHTML = "";
+      return;
+    }
+    section.classList.remove("hidden");
+    label.textContent = "4 из 5 в линии (" + close.length + "):";
+    close.sort((a, b) => a.seq - b.seq);
+    list.innerHTML = "";
+    for (const card of close) {
+      const chip = document.createElement("span");
+      chip.className = "close-chip";
+      chip.textContent = "#" + String(card.seq).padStart(3, "0");
+      chip.addEventListener("click", () => openSheet(card.cid));
+      list.appendChild(chip);
+    }
+  }
+
   function render() {
     renderCells();
+    renderClose();
     renderLog();
   }
 
