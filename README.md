@@ -64,6 +64,20 @@ By default, the card's sequential number is printed on both sides of the outer f
 
 Card dimensions: 230 x 90 x 1.5 mm base.
 
+### Print a card holder
+
+A standalone helper at `scripts/generate_box.py` produces an STL of a corner-bracket holder for the printed card stack. It is a flat base plate with four vertical L-shaped corner posts and a low perimeter rail that ties the corners into a rigid frame. There are no full walls -- only the corners stick up, so the stack is visible and easy to grab. The script is intentionally kept outside the main `loto` CLI and has no dependency on the registry.
+
+```bash
+uv run python scripts/generate_box.py                       # 30 cards, stl_output/card_holder.stl
+uv run python scripts/generate_box.py --cards 40            # taller posts for ~40 cards
+uv run python scripts/generate_box.py --height 70 -o h.stl  # explicit post height
+uv run python scripts/generate_box.py --rail-height 0       # corners only, no perimeter rail
+uv run python scripts/generate_box.py --tolerance 1.5       # looser fit if your printer runs hot
+```
+
+Defaults are tuned for a 230 x 90 mm card with 1 mm clearance per side, 2.5 mm wall thickness, 25 mm corner legs, a 4 mm perimeter rail, and post height sized to fit a 30-card stack plus 5 mm headroom. Every parameter is overridable via CLI flags (`--tolerance`, `--wall`, `--corner-length`, `--base-thickness`, `--rail-height`). The output is a single STL ready to slice -- no multi-material setup needed.
+
 ### List printed cards
 
 ```bash
@@ -273,11 +287,14 @@ src/russian_loto/
     serve.py            -- live game web server (stdlib http.server)
     templates/
         game.html       -- single-page UI for the live game (HTML + inline CSS/JS)
+scripts/
+    generate_box.py     -- standalone STL generator for the corner-bracket card holder
 tests/
     conftest.py         -- test isolation (redirects registry to temp file)
     test_card.py        -- card generation tests
     test_registry.py    -- registry tests (rows storage, delete, migration)
     test_render_stl.py  -- STL geometry tests
+    test_generate_box.py -- card holder geometry tests (slow, builds CadQuery solids)
     test_serve.py       -- web server tests (payload building, handler, skipped legacy)
     test_cli_helpers.py -- pure-function tests for CLI parsers (seq range, row input)
 bin/
