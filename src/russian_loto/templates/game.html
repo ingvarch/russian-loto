@@ -61,6 +61,7 @@
   }
   .counter { font-size: 18px; font-weight: 600; }
   .counter .total { color: var(--text-dim); font-weight: 400; }
+  .card-count { font-size: 13px; color: var(--text-dim); font-weight: 400; margin-left: 8px; }
   .new-game-btn {
     background: transparent; border: 1px solid var(--border);
     color: var(--text); padding: 8px 14px; border-radius: 8px;
@@ -346,6 +347,7 @@
     font-weight: 600; color: var(--text-dim); margin-bottom: 4px;
   }
   .preview .preview-row { display: flex; justify-content: space-between; }
+  .form-hint { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
   .form-error {
     font-size: 12px;
     color: var(--level3);
@@ -534,7 +536,10 @@
 <body>
 
 <header>
-  <div class="counter"><span id="counter-called">0</span><span class="total">/90</span></div>
+  <div class="counter">
+    <span id="counter-called">0</span><span class="total">/90</span>
+    <span class="card-count" id="card-count"></span>
+  </div>
   <button class="new-game-btn" id="new-game-btn">Новая игра</button>
 </header>
 
@@ -617,6 +622,13 @@
         </div>
       </label>
 
+      <div class="form-row">
+        <label>Карты в игре</label>
+        <input type="text" id="ng-cards" placeholder="все" inputmode="text"
+               style="font-variant-numeric: tabular-nums;">
+        <div class="form-hint" id="ng-cards-hint"></div>
+      </div>
+
       <div class="preview hidden" id="ng-preview">
         <div class="preview-title">Предварительная разбивка</div>
         <div class="preview-row"><span>одна линия</span><span id="ng-preview-1">0</span></div>
@@ -683,12 +695,14 @@
 </div>
 
 <script type="application/json" id="cards-data">{{CARDS_JSON}}</script>
+<script type="application/json" id="server-range">{{SERVER_RANGE}}</script>
 
 <script>
 (function () {
   "use strict";
 
   const CARDS = JSON.parse(document.getElementById("cards-data").textContent);
+  const SERVER_RANGE = JSON.parse(document.getElementById("server-range").textContent);
   const STORAGE_KEY = "loto-game-state";
   const LEVEL_LABELS = { 1: "одна линия", 2: "две линии", 3: "ПОЛНОЕ ЛОТО" };
 
@@ -704,6 +718,7 @@
       percentages: [10, 25, 65],     // percentages per level, must sum to 100
       split: true,           // on ties: true = split evenly, false = host picks one
       tiebreakResolutions: {},       // {"<level>-<callCount>": "<cid>"} -- chosen winner per tie
+      cardRange: null,               // null = all loaded cards, [lo, hi] = filter by seq range
     };
     return Object.assign(base, overrides || {});
   }
@@ -719,6 +734,7 @@
       if (!Array.isArray(parsed.percentages)) parsed.percentages = [10, 25, 65];
       if (parsed.split === undefined) parsed.split = true;
       if (!parsed.tiebreakResolutions) parsed.tiebreakResolutions = {};
+      if (parsed.cardRange === undefined) parsed.cardRange = null;
       return parsed;
     } catch (e) {
       return null;
@@ -735,6 +751,12 @@
 
   function calledSet() {
     return new Set(state.called);
+  }
+
+  function activeCards() {
+    if (!state.cardRange) return CARDS;
+    const [lo, hi] = state.cardRange;
+    return CARDS.filter((c) => c.seq >= lo && c.seq <= hi);
   }
 
   // ---- Game logic ----
@@ -770,7 +792,7 @@
   }
 
   function closeCards(called) {
-    return CARDS.filter((card) => isCardClose(card, called));
+    return activeCards().filter((card) => isCardClose(card, called));
   }
 
   // ---- Jackpot / payouts ----
@@ -840,7 +862,7 @@
     let winnerCards;
     if (firstEvents.length === 1 || state.split) {
       winnerCards = firstEvents
-        .map((e) => CARDS.find((c) => c.cid === e.cid))
+        .map((e) => activeCards().find((c) => c.cid === e.cid))
         .filter(Boolean);
     } else {
       // split=false and we have a tie -- check if host has resolved it.
@@ -848,11 +870,11 @@
       const resolvedCid = (state.tiebreakResolutions || {})[key];
       if (!resolvedCid) {
         const candidates = firstEvents
-          .map((e) => CARDS.find((c) => c.cid === e.cid))
+          .map((e) => activeCards().find((c) => c.cid === e.cid))
           .filter(Boolean);
         return { status: 'pending', base: base, candidates: candidates, tiebreakKey: key };
       }
-      const winner = CARDS.find((c) => c.cid === resolvedCid);
+      const winner = activeCards().find((c) => c.cid === resolvedCid);
       winnerCards = winner ? [winner] : [];
     }
 
@@ -887,7 +909,7 @@
     const callCount = state.called.length;
     let bingoCard = null;
 
-    for (const card of CARDS) {
+    for (const card of activeCards()) {
       const prev = state.cardLevel[card.cid] || 0;
       const next = levelOf(card, called);
       newLevels[card.cid] = next;
@@ -1019,6 +1041,8 @@
 
   function renderLog() {
     counterEl.textContent = String(state.called.length);
+    const active = activeCards();
+    document.getElementById("card-count").textContent = active.length + " карт";
     if (state.events.length === 0) {
       logEl.innerHTML = '<div class="log-empty">Событий пока нет</div>';
       return;
@@ -1195,6 +1219,19 @@
     document.getElementById("ng-pct3").value = (state.percentages && state.percentages[2]) || 65;
     document.getElementById("ng-split").checked = state.split !== false;
     document.getElementById("ng-error").textContent = "";
+    const cardsInput = document.getElementById("ng-cards");
+    if (state.cardRange) {
+        cardsInput.value = state.cardRange[0] + "-" + state.cardRange[1];
+    } else {
+        cardsInput.value = "";
+    }
+    const allSeqs = CARDS.map((c) => c.seq);
+    const minSeq = Math.min(...allSeqs);
+    const maxSeq = Math.max(...allSeqs);
+    document.getElementById("ng-cards-hint").textContent =
+        "Загружено: \u2116" + String(minSeq).padStart(3, "0") +
+        "\u2013\u2116" + String(maxSeq).padStart(3, "0") +
+        ", всего " + CARDS.length;
     syncPresetActive();
     updateNewGamePreview();
     document.getElementById("new-game-modal").classList.add("open");
@@ -1210,7 +1247,8 @@
     const pct2 = parseInt(document.getElementById("ng-pct2").value, 10);
     const pct3 = parseInt(document.getElementById("ng-pct3").value, 10);
     const split = document.getElementById("ng-split").checked;
-    return { jackpot, percentages: [pct1, pct2, pct3], split };
+    const cardsRaw = document.getElementById("ng-cards").value.trim();
+    return { jackpot, percentages: [pct1, pct2, pct3], split, cardRange: cardsRaw || null };
   }
 
   function validateNewGameForm() {
@@ -1229,6 +1267,36 @@
     if (sum !== 100) {
       err.textContent = "Сумма процентов должна быть ровно 100 (сейчас " + sum + ").";
       return null;
+    }
+    if (form.cardRange) {
+        const raw = form.cardRange;
+        const rangeMatch = raw.match(/^(\d+)\s*-\s*(\d+)$/);
+        const singleMatch = raw.match(/^(\d+)$/);
+        if (rangeMatch) {
+            const lo = parseInt(rangeMatch[1], 10);
+            const hi = parseInt(rangeMatch[2], 10);
+            if (lo < 1 || hi < 1 || lo > hi) {
+                err.textContent = "Неверный диапазон карт.";
+                return null;
+            }
+            form.cardRange = [lo, hi];
+        } else if (singleMatch) {
+            const n = parseInt(singleMatch[1], 10);
+            if (n < 1) {
+                err.textContent = "Номер карты должен быть >= 1.";
+                return null;
+            }
+            form.cardRange = [n, n];
+        } else {
+            err.textContent = "Формат диапазона: 1-25 или одно число.";
+            return null;
+        }
+        const [lo, hi] = form.cardRange;
+        const count = CARDS.filter((c) => c.seq >= lo && c.seq <= hi).length;
+        if (count === 0) {
+            err.textContent = "Ни одной загруженной карты в этом диапазоне.";
+            return null;
+        }
     }
     err.textContent = "";
     return form;

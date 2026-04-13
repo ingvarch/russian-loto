@@ -119,6 +119,21 @@ class TestBuildCardsPayload:
             _make_registry_with_cards(path, 3)
             assert list_skipped_seqs(Registry(path)) == []
 
+    def test_seq_range_filters_cards(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg, cards = _make_registry_with_cards(path, 10)
+            payload = build_cards_payload(reg, seq_range=(3, 7))
+            seqs = [e["seq"] for e in payload]
+            assert seqs == [3, 4, 5, 6, 7]
+
+    def test_seq_range_none_returns_all(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "printed.json")
+            reg, cards = _make_registry_with_cards(path, 5)
+            payload = build_cards_payload(reg, seq_range=None)
+            assert len(payload) == 5
+
     def test_empty_registry_returns_empty_payload(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = os.path.join(tmpdir, "printed.json")
@@ -149,6 +164,15 @@ class TestRenderPage:
     def test_no_unfilled_placeholder_remains(self):
         html = render_page(self._sample_payload())
         assert "{{CARDS_JSON}}" not in html
+        assert "{{SERVER_RANGE}}" not in html
+
+    def test_server_range_null_by_default(self):
+        html = render_page(self._sample_payload())
+        assert '<script type="application/json" id="server-range">null</script>' in html
+
+    def test_server_range_injected_when_set(self):
+        html = render_page(self._sample_payload(), seq_range=(3, 20))
+        assert '<script type="application/json" id="server-range">[3, 20]</script>' in html
 
     def test_html_doctype(self):
         html = render_page(self._sample_payload())
@@ -238,6 +262,38 @@ class TestCheckBasicAuth:
 
     def test_no_colon_separator(self):
         assert check_basic_auth(self._header(b"nocolon"), "nocolon") is False
+
+
+class TestParseCardsRange:
+    def test_simple_range(self):
+        from russian_loto.serve import parse_cards_range
+        assert parse_cards_range("1-25") == (1, 25)
+
+    def test_single_number(self):
+        from russian_loto.serve import parse_cards_range
+        assert parse_cards_range("5") == (5, 5)
+
+    def test_whitespace_stripped(self):
+        from russian_loto.serve import parse_cards_range
+        assert parse_cards_range(" 3 - 20 ") == (3, 20)
+
+    def test_invalid_raises(self):
+        import pytest
+        from russian_loto.serve import parse_cards_range
+        with pytest.raises(ValueError):
+            parse_cards_range("abc")
+
+    def test_inverted_range_raises(self):
+        import pytest
+        from russian_loto.serve import parse_cards_range
+        with pytest.raises(ValueError):
+            parse_cards_range("25-1")
+
+    def test_zero_raises(self):
+        import pytest
+        from russian_loto.serve import parse_cards_range
+        with pytest.raises(ValueError):
+            parse_cards_range("0-5")
 
 
 class TestHandlerAuth:

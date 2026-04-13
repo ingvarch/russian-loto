@@ -15,20 +15,51 @@ from importlib import resources
 from russian_loto.registry import Registry
 
 
-def build_cards_payload(registry: Registry) -> list[dict]:
+def parse_cards_range(spec: str) -> tuple[int, int]:
+    """Parse a 'START-END' or 'N' spec into an inclusive (lo, hi) tuple.
+
+    Raises ValueError on invalid input, inverted ranges, or non-positive numbers.
+    """
+    spec = spec.strip().replace(" ", "")
+    if not spec:
+        raise ValueError("empty cards range")
+    if "-" in spec:
+        parts = spec.split("-", 1)
+        if not parts[0] or not parts[1]:
+            raise ValueError(f"bad range {spec!r}")
+        lo, hi = int(parts[0]), int(parts[1])
+    else:
+        lo = hi = int(spec)
+    if lo < 1 or hi < 1:
+        raise ValueError(f"range values must be >= 1, got {spec!r}")
+    if lo > hi:
+        raise ValueError(f"inverted range {spec!r}")
+    return (lo, hi)
+
+
+def build_cards_payload(
+    registry: Registry,
+    seq_range: tuple[int, int] | None = None,
+) -> list[dict]:
     """Serialize every registered card with its stored row layout.
 
     Cards without a stored row layout (legacy entries) are excluded -- showing
     a guessed layout would silently mislead the verifier. Use `list_skipped_seqs`
     to learn which cards were dropped so the host can fix them via `loto fix-rows`.
+
+    When *seq_range* is a ``(lo, hi)`` tuple, only cards whose ``seq`` falls
+    within ``[lo, hi]`` inclusive are returned.
     """
     payload = []
     for cid in registry.all_ids():
         rows = registry.get_rows(cid)
         if rows is None:
             continue
+        seq = registry.get_seq(cid)
+        if seq_range is not None and not (seq_range[0] <= seq <= seq_range[1]):
+            continue
         payload.append({
-            "seq": registry.get_seq(cid),
+            "seq": seq,
             "cid": cid,
             "numbers": sorted(registry.get_numbers(cid)),
             "rows": rows,
@@ -46,10 +77,16 @@ def list_skipped_seqs(registry: Registry) -> list[int]:
     return sorted(skipped)
 
 
-def render_page(payload: list[dict]) -> str:
+def render_page(
+    payload: list[dict],
+    seq_range: tuple[int, int] | None = None,
+) -> str:
     """Read the HTML template and inject the cards payload as inline JSON."""
     template = resources.files("russian_loto.templates").joinpath("game.html").read_text(encoding="utf-8")
-    return template.replace("{{CARDS_JSON}}", json.dumps(payload, ensure_ascii=False))
+    range_json = json.dumps(list(seq_range)) if seq_range else "null"
+    return (template
+            .replace("{{CARDS_JSON}}", json.dumps(payload, ensure_ascii=False))
+            .replace("{{SERVER_RANGE}}", range_json))
 
 
 def generate_auth_code() -> str:
@@ -138,22 +175,29 @@ def serve(
     host: str = "0.0.0.0",
     port: int = 8000,
     auth_code: str | None = None,
+    seq_range: tuple[int, int] | None = None,
 ) -> None:
     """Start the game web server. Blocks until interrupted.
 
     When `auth_code` is set, the page is protected by HTTP Basic auth and
     the code is printed in the startup banner so the host can read it to
     the phone.
+
+    When `seq_range` is a ``(lo, hi)`` tuple, only cards whose ``seq`` falls
+    within ``[lo, hi]`` inclusive are served.
     """
-    payload = build_cards_payload(registry)
+    payload = build_cards_payload(registry, seq_range=seq_range)
     skipped = list_skipped_seqs(registry)
-    html = render_page(payload)
+    html = render_page(payload, seq_range=seq_range)
     handler = make_handler(html, auth_code=auth_code)
     server = HTTPServer((host, port), handler)
 
+    range_note = ""
+    if seq_range:
+        range_note = f" (#{seq_range[0]:03d}\u2013#{seq_range[1]:03d})"
     lan = _detect_lan_ip()
     print("Russian Loto game server", flush=True)
-    print(f"  Cards in game: {len(payload)}", flush=True)
+    print(f"  Cards in game: {len(payload)}{range_note}", flush=True)
     if skipped:
         skipped_str = ", ".join(f"#{s:03d}" for s in skipped)
         print(f"  WARNING: {len(skipped)} card(s) skipped (no stored row layout): {skipped_str}", flush=True)

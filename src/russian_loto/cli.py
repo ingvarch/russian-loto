@@ -7,7 +7,7 @@ from russian_loto.constants import COLUMN_RANGES, GRID_COLS, GRID_ROWS
 from russian_loto.registry import Registry, card_id
 from russian_loto.render import render_pdf
 from russian_loto.render_stl import render_stl
-from russian_loto.serve import generate_auth_code, serve
+from russian_loto.serve import generate_auth_code, parse_cards_range, serve
 
 
 def _parse_seq_range(spec: str) -> list[int]:
@@ -481,7 +481,9 @@ def cmd_rm(seq_spec: str, force: bool) -> None:
               help="Require an HTTP Basic auth code to view the page. Auto-generates a random 6-digit code unless --auth-code is also given.")
 @click.option("--auth-code", default=None,
               help="Use this exact auth code instead of auto-generating. Implies --auth.")
-def cmd_serve(host: str, port: int, auth: bool, auth_code: str | None) -> None:
+@click.option("--cards", "cards_spec", default=None,
+              help="Seq range of cards to include, e.g. '1-25'. Default: all.")
+def cmd_serve(host: str, port: int, auth: bool, auth_code: str | None, cards_spec: str | None) -> None:
     """Start the live game web server for verifying wins from your phone."""
     if auth_code is not None:
         if not auth_code:
@@ -491,4 +493,10 @@ def cmd_serve(host: str, port: int, auth: bool, auth_code: str | None) -> None:
         code = generate_auth_code()
     else:
         code = None
-    serve(Registry(), host=host, port=port, auth_code=code)
+    seq_range = None
+    if cards_spec is not None:
+        try:
+            seq_range = parse_cards_range(cards_spec)
+        except ValueError as e:
+            raise click.BadParameter(str(e), param_hint="'--cards'") from e
+    serve(Registry(), host=host, port=port, auth_code=code, seq_range=seq_range)
