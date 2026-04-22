@@ -33,9 +33,10 @@ Without direnv, use `uv run loto` instead.
 ```bash
 loto gen -t pdf -n 6
 loto gen -t pdf -n 4 -o my_cards.pdf
+loto gen -t pdf -n 4 --no-seq    # without the "№ NNN" label on sides
 ```
 
-Generates cards as a PDF file (A4 landscape, 2 cards per page with cut line).
+Generates cards as a PDF file. Each card is exactly 230 x 90 mm (same physical footprint as the STL card) and visually identical to it: double frame, 3 x 9 grid with bold numbers, and the card's sequential number printed vertically on both sides of the outer frame. Pages are A4 landscape with two cards stacked flush against each other, and dashed cut marks are drawn around every card so you can cut them out with scissors (5 cuts per page get both cards out cleanly).
 
 ### Generate STL cards for 3D printing
 
@@ -118,17 +119,20 @@ If the card is a legacy entry without a stored layout, `show` refuses to render 
 ### Reprint a card in another format
 
 ```bash
-loto reprint --seq 1 -t pdf              # by sequential number
-loto reprint --id aa7c4b83 -t stl        # by hash ID
-loto reprint --seq 5 -t stl -d my_dir    # custom output directory
-loto reprint --seq 1 -t stl --force      # regenerate even if already printed
+loto reprint --seq 1 -t pdf                    # one card by seq
+loto reprint --id aa7c4b83 -t stl              # one card by hash ID
+loto reprint --seq 51-100 -t pdf -o bulk.pdf   # contiguous range (all into one PDF)
+loto reprint --seq 3,7,9 -t pdf                # comma-separated list
+loto reprint --seq 3,5-7,10 -t pdf             # mix of list and range
+loto reprint --seq 5 -t stl -d my_dir          # custom STL output directory
+loto reprint --seq 51-100 -t pdf --force       # regenerate even if already printed
 ```
 
-Renders an existing card in the target format, using the row layout that was stored when the card was first generated. The format is added to the card's registry entry. Useful when you printed PDF cards for a game and later want to 3D-print specific ones -- the STL will match the PDF cell-for-cell because both come from the same stored layout.
+Renders existing cards in the target format, using the row layouts that were stored when the cards were first generated. The format is added to each card's registry entry. Useful when you printed PDF cards for a game and later want to 3D-print specific ones -- the STL will match the PDF cell-for-cell because both come from the same stored layout.
 
-If the card was already printed in the requested format, use `--force` to regenerate anyway.
+`--seq` accepts the same grammar as `loto rm`: a single number, a dash-range, a comma-separated list, or any mix. When multiple cards are selected, PDF runs bundle them into one multi-page file (`-o bulk.pdf`) and STL runs drop all generated files into the same `--output-dir`.
 
-If the card is a legacy entry (registered before row storage was added) and has no stored layout, `reprint` refuses to run and points you at `loto fix-rows --seq N` to assign the layout from the original physical card first. See "Fix legacy card layouts" below.
+If any requested seq is not in the registry, `reprint` reports the skipped numbers and continues with the rest. If a card was already printed in the requested format it is skipped silently until you pass `--force`. If a card is a legacy entry (registered before row storage was added) and has no stored layout, `reprint` refuses to run the entire batch and points you at `loto fix-rows --seq N` to assign the layout from the original physical card first. See "Fix legacy card layouts" below.
 
 ### Run a live game from your phone
 
@@ -279,10 +283,11 @@ Both modes include a double border frame (thick outer + thin inner with gap) and
 ```
 src/russian_loto/
     card.py             -- card generation logic
+    card_geometry.py    -- mm-level card dimensions shared by PDF and STL renderers
     cli.py              -- CLI entry point (gen, ls, show, reprint, serve, fix-rows, rm)
     constants.py        -- shared grid constants and column ranges
     registry.py         -- printed card registry (JSON file with row layouts)
-    render.py           -- PDF rendering with Pillow
+    render.py           -- PDF rendering with Pillow (1:1 visual match with STL)
     render_stl.py       -- STL rendering with CadQuery
     serve.py            -- live game web server (stdlib http.server)
     templates/
@@ -293,10 +298,12 @@ tests/
     conftest.py         -- test isolation (redirects registry to temp file)
     test_card.py        -- card generation tests
     test_registry.py    -- registry tests (rows storage, delete, migration)
+    test_render_pdf.py  -- PDF geometry + crop-mark tests
     test_render_stl.py  -- STL geometry tests
     test_generate_box.py -- card holder geometry tests (slow, builds CadQuery solids)
     test_serve.py       -- web server tests (payload building, handler, skipped legacy)
     test_cli_helpers.py -- pure-function tests for CLI parsers (seq range, row input)
+    test_cli_reprint.py -- end-to-end tests for `loto reprint` (range support, registry updates)
 bin/
     loto                -- shell wrapper for uv run loto
     loto-game           -- starts loto serve + cloudflared tunnel run together

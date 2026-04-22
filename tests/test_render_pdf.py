@@ -12,6 +12,9 @@ from PIL import Image
 from russian_loto.card import generate_card, generate_unique_cards
 from russian_loto.card_geometry import CARD_HEIGHT_MM, CARD_WIDTH_MM
 from russian_loto.render import (
+    PAGE_HEIGHT_MM,
+    PAGE_V_MARGIN_MM,
+    PAGE_WIDTH_MM,
     _compose_page,
     _draw_card,
     mm_to_px,
@@ -64,6 +67,59 @@ class TestComposePage:
             mm_to_px(A4_LANDSCAPE_W_MM),
             mm_to_px(A4_LANDSCAPE_H_MM),
         )
+
+
+def _count_ink_in_band(page, y_center_px: int, x0_px: int, x1_px: int, band: int = 1) -> int:
+    """Count grayscale pixels below white threshold across a thin horizontal band."""
+    count = 0
+    for y in range(y_center_px - band, y_center_px + band + 1):
+        for x in range(x0_px, x1_px):
+            if page.getpixel((x, y)) < 200:
+                count += 1
+    return count
+
+
+def _count_ink_in_vband(page, x_center_px: int, y0_px: int, y1_px: int, band: int = 1) -> int:
+    count = 0
+    for x in range(x_center_px - band, x_center_px + band + 1):
+        for y in range(y0_px, y1_px):
+            if page.getpixel((x, y)) < 200:
+                count += 1
+    return count
+
+
+class TestCropMarks:
+    """Dashed cut lines at the 230x90mm boundary of each card."""
+
+    def _card_x_range_px(self):
+        card_x0_mm = (PAGE_WIDTH_MM - CARD_WIDTH_MM) / 2
+        return mm_to_px(card_x0_mm), mm_to_px(card_x0_mm + CARD_WIDTH_MM)
+
+    def test_dashed_line_at_top_of_top_card(self):
+        cards = generate_unique_cards(2)
+        page = _compose_page([(1, cards[0]), (2, cards[1])]).convert("L")
+        x0, x1 = self._card_x_range_px()
+        y = mm_to_px(PAGE_V_MARGIN_MM)
+        ink = _count_ink_in_band(page, y, x0, x1)
+        # Full-width dashed line spans 230mm; expect many ink pixels.
+        assert ink > 200
+
+    def test_dashed_line_at_bottom_of_bottom_card(self):
+        cards = generate_unique_cards(2)
+        page = _compose_page([(1, cards[0]), (2, cards[1])]).convert("L")
+        x0, x1 = self._card_x_range_px()
+        y = mm_to_px(PAGE_HEIGHT_MM - PAGE_V_MARGIN_MM)
+        ink = _count_ink_in_band(page, y, x0, x1)
+        assert ink > 200
+
+    def test_dashed_vertical_on_left_of_card(self):
+        cards = generate_unique_cards(1)
+        page = _compose_page([(1, cards[0])]).convert("L")
+        x0, _ = self._card_x_range_px()
+        card_y0 = mm_to_px((PAGE_HEIGHT_MM - CARD_HEIGHT_MM) / 2)
+        card_y1 = mm_to_px((PAGE_HEIGHT_MM + CARD_HEIGHT_MM) / 2)
+        ink = _count_ink_in_vband(page, x0, card_y0, card_y1)
+        assert ink > 50
 
 
 class TestRenderPdf:

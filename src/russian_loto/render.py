@@ -35,10 +35,17 @@ DPI = 300
 PAGE_WIDTH_MM = 297.0
 PAGE_HEIGHT_MM = 210.0
 
-# Two cards per page (230x90 each) centered vertically with equal margins
-# and a gap large enough to fit a cut line. The maths: 2*margin + 2*90 + gap = 210.
-PAGE_V_MARGIN_MM = 10.0
-PAGE_CARD_GAP_MM = 10.0
+# Two 230x90 mm cards are placed flush against each other on an A4 page so
+# that a single horizontal cut along their shared edge separates them.
+# Maths: 2 * margin + 2 * 90 = 210.
+PAGE_V_MARGIN_MM = 15.0
+PAGE_CARD_GAP_MM = 0.0
+
+# Dashed crop marks drawn at the 230x90 mm boundary of every card.
+CROP_DASH_MM = 2.0
+CROP_GAP_MM = 1.5
+CROP_COLOR = "#888888"
+CROP_WIDTH_PX = 2
 
 _DEFAULT_FONTS = {
     "darwin": "/System/Library/Fonts/Supplemental/Arial Black.ttf",
@@ -196,6 +203,32 @@ def _draw_card(card: list[list[int | None]], seq: int) -> Image.Image:
     return img
 
 
+def _draw_dashed_h(draw: ImageDraw.ImageDraw, x0_mm: float, x1_mm: float, y_mm: float) -> None:
+    """Horizontal dashed line from x0_mm to x1_mm at y_mm."""
+    y = mm_to_px(y_mm)
+    x_end_px = mm_to_px(x1_mm)
+    dash = mm_to_px(CROP_DASH_MM)
+    gap = mm_to_px(CROP_GAP_MM)
+    x = mm_to_px(x0_mm)
+    while x < x_end_px:
+        seg_end = min(x + dash, x_end_px)
+        draw.line([(x, y), (seg_end, y)], fill=CROP_COLOR, width=CROP_WIDTH_PX)
+        x += dash + gap
+
+
+def _draw_dashed_v(draw: ImageDraw.ImageDraw, y0_mm: float, y1_mm: float, x_mm: float) -> None:
+    """Vertical dashed line from y0_mm to y1_mm at x_mm."""
+    x = mm_to_px(x_mm)
+    y_end_px = mm_to_px(y1_mm)
+    dash = mm_to_px(CROP_DASH_MM)
+    gap = mm_to_px(CROP_GAP_MM)
+    y = mm_to_px(y0_mm)
+    while y < y_end_px:
+        seg_end = min(y + dash, y_end_px)
+        draw.line([(x, y), (x, seg_end)], fill=CROP_COLOR, width=CROP_WIDTH_PX)
+        y += dash + gap
+
+
 def _compose_page(numbered_cards: list[tuple[int, list[list[int | None]]]]) -> Image.Image:
     """Lay out up to two cards on an A4 landscape page."""
     if not 1 <= len(numbered_cards) <= 2:
@@ -220,20 +253,22 @@ def _compose_page(numbered_cards: list[tuple[int, list[list[int | None]]]]) -> I
         card_img = _draw_card(card, seq)
         page.paste(card_img, (card_x_px, mm_to_px(y_mm)))
 
-    # Dashed cut line between two cards
-    if len(numbered_cards) == 2:
-        draw = ImageDraw.Draw(page)
-        cut_y_mm = PAGE_V_MARGIN_MM + CARD_HEIGHT_MM + PAGE_CARD_GAP_MM / 2
-        cut_y = mm_to_px(cut_y_mm)
-        margin_x = mm_to_px(8.0)
-        dash_len = mm_to_px(2.0)
-        gap_len = mm_to_px(1.5)
-        x = margin_x
-        x_max = page_w - margin_x
-        while x < x_max:
-            x_end = min(x + dash_len, x_max)
-            draw.line([(x, cut_y), (x_end, cut_y)], fill="#AAAAAA", width=2)
-            x += dash_len + gap_len
+    # Dashed cut lines at each card's 230x90 mm boundary.
+    draw = ImageDraw.Draw(page)
+    x_left_mm = card_x_mm
+    x_right_mm = card_x_mm + CARD_WIDTH_MM
+    top_y_mm = y_positions_mm[0]
+    bottom_y_mm = y_positions_mm[-1] + CARD_HEIGHT_MM
+    # Horizontals: top edge, every shared/bottom edge.
+    _draw_dashed_h(draw, x_left_mm, x_right_mm, top_y_mm)
+    for y_mm in y_positions_mm:
+        if y_mm == top_y_mm:
+            continue
+        _draw_dashed_h(draw, x_left_mm, x_right_mm, y_mm)
+    _draw_dashed_h(draw, x_left_mm, x_right_mm, bottom_y_mm)
+    # Verticals: one continuous line on each side spanning all cards.
+    _draw_dashed_v(draw, top_y_mm, bottom_y_mm, x_left_mm)
+    _draw_dashed_v(draw, top_y_mm, bottom_y_mm, x_right_mm)
 
     return page
 

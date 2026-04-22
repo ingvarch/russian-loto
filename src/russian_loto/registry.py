@@ -7,10 +7,13 @@ from datetime import date
 
 from russian_loto.card import card_numbers
 
-DEFAULT_REGISTRY_PATH = os.environ.get(
-    "RUSSIAN_LOTO_REGISTRY",
-    os.path.expanduser("~/.russian-loto/printed.json"),
-)
+def _default_registry_path() -> str:
+    """Resolve the registry path at call time so tests (and in-process env
+    changes) can redirect it via ``RUSSIAN_LOTO_REGISTRY``."""
+    return os.environ.get(
+        "RUSSIAN_LOTO_REGISTRY",
+        os.path.expanduser("~/.russian-loto/printed.json"),
+    )
 
 
 def card_id(card: list[list[int | None]]) -> str:
@@ -29,11 +32,11 @@ class Registry:
     - printed_at: date of first registration
     """
 
-    def __init__(self, path: str = DEFAULT_REGISTRY_PATH) -> None:
-        self._path = path
+    def __init__(self, path: str | None = None) -> None:
+        self._path = path if path is not None else _default_registry_path()
         self._data: dict[str, dict] = {}
-        if os.path.exists(path):
-            with open(path) as f:
+        if os.path.exists(self._path):
+            with open(self._path) as f:
                 self._data = json.load(f)
         self._migrate()
 

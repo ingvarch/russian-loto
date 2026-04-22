@@ -197,6 +197,7 @@ Examples:
   loto ls                           List all previously printed cards
   loto show --seq 1                 Show card #001 layout in the terminal
   loto reprint --seq 1 -t pdf       Reprint card #001 as PDF
+  loto reprint --seq 51-100 -t pdf --force -o bulk.pdf  Bulk reprint range
   loto reprint --id aa7c4b83 -t stl Reprint card by hash as STL
   loto serve                        Start live game server (open URL on phone)
   loto serve --auth                 Start server with random 6-digit auth code
@@ -328,8 +329,50 @@ def cmd_show(seq: int | None, card_hash: str | None) -> None:
     click.echo(_format_card(rows))
 
 
+def _resolve_reprint_targets(
+    registry: Registry,
+    seq_spec: str | None,
+    card_hash: str | None,
+) -> tuple[list[tuple[int, str]], list[int]]:
+    """Resolve the cards the user asked to reprint into [(seq, cid), ...].
+
+    Also returns the list of seqs from the spec that are not in the registry
+    so the CLI can warn about them. Raises UsageError/ClickException on
+    malformed input or unknown hash.
+    """
+    if seq_spec is None and card_hash is None:
+        raise click.UsageError("Provide either --seq or --id to identify the card(s).")
+    if seq_spec is not None and card_hash is not None:
+        raise click.UsageError("Provide only one of --seq or --id, not both.")
+
+    if seq_spec is not None:
+        try:
+            seqs = _parse_seq_range(seq_spec)
+        except ValueError as e:
+            raise click.ClickException(f"Bad seq spec: {e}") from e
+        targets: list[tuple[int, str]] = []
+        missing: list[int] = []
+        for s in seqs:
+            r = registry.find_by_seq(s)
+            if r is None:
+                missing.append(s)
+            else:
+                targets.append((s, r[0]))
+        return targets, missing
+
+    numbers = registry.get_numbers(card_hash)
+    if not numbers:
+        raise click.ClickException(f"Card with id {card_hash} not found.")
+    return [(registry.get_seq(card_hash), card_hash)], []
+
+
+def _fmt_seqs(seqs: list[int]) -> str:
+    return ", ".join(f"#{s:03d}" for s in seqs)
+
+
 @main.command("reprint", cls=_RawEpilogCommand, epilog=EXAMPLES)
-@click.option("--seq", type=int, default=None, help="Card sequential number (e.g. 1).")
+@click.option("--seq", "seq_spec", type=str, default=None,
+              help="Card seq number, range, or list (e.g. 5, 5-10, 3,7,9, 3,5-7,10).")
 @click.option("--id", "card_hash", type=str, default=None, help="Card hash ID (e.g. aa7c4b83).")
 @click.option("-t", "--type", "output_type", required=True,
               type=click.Choice(["pdf", "stl"]), help="Output format: pdf or stl.")
@@ -342,52 +385,63 @@ def cmd_show(seq: int | None, card_hash: str | None) -> None:
               help="STL style: engraved into base (inlay) or raised above base.")
 @click.option("--seq-label/--no-seq", default=True, show_default=True,
               help="Print card number on the sides of the card.")
-def cmd_reprint(seq: int | None, card_hash: str | None, output_type: str, output: str, output_dir: str, force: bool, inlay: bool, seq_label: bool) -> None:
-    """Reprint an existing card in a different format."""
-    if seq is None and card_hash is None:
-        raise click.UsageError("Provide either --seq or --id to identify the card.")
-    if seq is not None and card_hash is not None:
-        raise click.UsageError("Provide only one of --seq or --id, not both.")
-
+def cmd_reprint(seq_spec: str | None, card_hash: str | None, output_type: str, output: str, output_dir: str, force: bool, inlay: bool, seq_label: bool) -> None:
+    """Reprint one or more existing cards in the given format."""
     registry = Registry()
+    targets, missing = _resolve_reprint_targets(registry, seq_spec, card_hash)
 
-    if seq is not None:
-        result = registry.find_by_seq(seq)
-        if result is None:
-            raise click.ClickException(f"Card with seq #{seq:03d} not found.")
-        cid, entry = result
-    else:
-        numbers = registry.get_numbers(card_hash)
-        if not numbers:
-            raise click.ClickException(f"Card with id {card_hash} not found.")
-        cid = card_hash
-        entry = {"numbers": numbers}
+    if missing:
+        click.echo(f"Not in registry (skipped): {_fmt_seqs(missing)}")
 
-    if registry.is_printed(cid, output_type) and not force:
-        click.echo(f"Card #{registry.get_seq(cid):03d} {cid} already printed as {output_type.upper()}. Use --force to regenerate.")
+    if not targets:
+        click.echo("Nothing to reprint.")
         return
 
-    rows = registry.get_rows(cid)
-    if rows is None:
+    ready: list[tuple[int, str, list[list[int | None]]]] = []
+    skipped_printed: list[int] = []
+    legacy: list[int] = []
+    for card_seq, cid in targets:
+        if registry.is_printed(cid, output_type) and not force:
+            skipped_printed.append(card_seq)
+            continue
+        rows = registry.get_rows(cid)
+        if rows is None:
+            legacy.append(card_seq)
+            continue
+        ready.append((card_seq, cid, rows))
+
+    if legacy:
+        first = legacy[0]
         raise click.ClickException(
-            f"Card #{registry.get_seq(cid):03d} {cid} has no stored row layout "
-            f"(legacy entry). Run `loto fix-rows --seq {registry.get_seq(cid)}` first "
-            f"to enter the layout from the original physical card.",
+            f"Card(s) {_fmt_seqs(legacy)} have no stored row layout (legacy). "
+            f"Run `loto fix-rows --seq {first}` first, then retry."
         )
-    card = rows
-    card_seq = registry.get_seq(cid)
 
-    click.echo(f"Reprinting #{card_seq:03d} {cid} as {output_type.upper()}...")
+    if skipped_printed:
+        click.echo(
+            f"Already printed as {output_type.upper()} (use --force): "
+            f"{_fmt_seqs(skipped_printed)}"
+        )
 
-    label_seq = card_seq if seq_label else 0
+    if not ready:
+        return
+
+    target_str = _fmt_seqs([s for s, _, _ in ready])
+    click.echo(f"Reprinting {len(ready)} card(s) as {output_type.upper()}: {target_str}")
+
     if output_type == "stl":
-        render_stl([(card_seq, card)], output_dir, log=click.echo, inlay=inlay, show_seq=seq_label)
+        render_stl(
+            [(s, r) for s, _, r in ready], output_dir, log=click.echo,
+            inlay=inlay, show_seq=seq_label,
+        )
     else:
-        render_pdf([(label_seq, card)], output)
+        labelled = [(s if seq_label else 0, r) for s, _, r in ready]
+        render_pdf(labelled, output)
         click.echo(f"  -> {output}")
 
-    registry.register(card, output_type)
-    click.echo(f"  Updated registry: {cid} formats={registry.get_formats(cid)}")
+    for _, _, rows in ready:
+        registry.register(rows, output_type)
+    click.echo(f"  Updated registry for {len(ready)} card(s)")
 
 
 @main.command("fix-rows", cls=_RawEpilogCommand, epilog=EXAMPLES)
