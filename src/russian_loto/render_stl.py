@@ -13,49 +13,39 @@ from collections.abc import Callable
 
 import cadquery as cq
 
+from russian_loto.card_geometry import (
+    CARD_HEIGHT_MM,
+    CARD_WIDTH_MM,
+    CELL_SIZE_MM,
+    FRAME_GAP_MM,
+    FRAME_MARGIN_MM,
+    GRID_HEIGHT_MM,
+    GRID_WIDTH_MM,
+    INNER_FRAME_WIDTH_MM,
+    INNER_LINE_WIDTH_MM,
+    OUTER_LINE_WIDTH_MM,
+    SEQ_FONT_SIZE_MM,
+    TEXT_FONT,
+    TEXT_SIZE_MM,
+    seq_gap_half_mm,
+    seq_label,
+)
 from russian_loto.constants import GRID_COLS, GRID_ROWS
 from russian_loto.registry import card_id
 
-# Card dimensions (mm)
-CARD_WIDTH = 230.0
-CARD_HEIGHT = 90.0
+# 3D-only geometry (mm)
 BASE_THICKNESS = 1.5
-
-# Frame
 GRID_RAISE = 0.3
-OUTER_LINE_WIDTH = 1.2
-FRAME_MARGIN = 3.0
-FRAME_GAP = 1.5
-INNER_FRAME_WIDTH = 0.6
-
-# Grid area (inside inner frame)
-FRAME_INSET = FRAME_MARGIN + OUTER_LINE_WIDTH + FRAME_GAP + INNER_FRAME_WIDTH
-AVAIL_WIDTH = CARD_WIDTH - 2 * FRAME_INSET
-AVAIL_HEIGHT = CARD_HEIGHT - 2 * FRAME_INSET
-CELL_SIZE = min(AVAIL_WIDTH / GRID_COLS, AVAIL_HEIGHT / GRID_ROWS)
-GRID_WIDTH = CELL_SIZE * GRID_COLS
-GRID_HEIGHT = CELL_SIZE * GRID_ROWS
-INNER_LINE_WIDTH = 0.6
-
-# Numbers
 TEXT_RAISE = 0.6
-TEXT_SIZE = 17.0
-TEXT_FONT = "Arial Black"
-
-# Inlay mode: depth of engraving into the base
 INLAY_DEPTH = 0.6
-
-# Seq label on outer frame
-SEQ_FONT_SIZE = 4.0
-SEQ_PADDING = 1.0  # gap between text and frame on each side
 
 
 def _build_base() -> cq.Workplane:
     """Build the flat base plate."""
-    return cq.Workplane("XY").box(CARD_WIDTH, CARD_HEIGHT, BASE_THICKNESS)
+    return cq.Workplane("XY").box(CARD_WIDTH_MM, CARD_HEIGHT_MM, BASE_THICKNESS)
 
 
-def _build_overlay(card: list[list[int | None]], seq: int) -> cq.Workplane:
+def _build_overlay(card: list[list[int | None]], seq: int = 0) -> cq.Workplane:
     """Build the overlay: grid lines + numbers, sitting on top of the base."""
     return _build_overlay_shape(card, GRID_RAISE, seq=seq)
 
@@ -89,25 +79,25 @@ def _build_overlay_shape(
     # Double frame
     parts.extend(_make_frame_parts_at(top_z, height, seq=seq))
 
-    grid_x0 = -GRID_WIDTH / 2
-    grid_y0 = -GRID_HEIGHT / 2
+    grid_x0 = -GRID_WIDTH_MM / 2
+    grid_y0 = -GRID_HEIGHT_MM / 2
 
     # Vertical grid lines
     for col in range(1, GRID_COLS):
-        x = grid_x0 + col * CELL_SIZE
+        x = grid_x0 + col * CELL_SIZE_MM
         parts.append(
             cq.Workplane("XY")
             .transformed(offset=(x, 0, top_z + height / 2))
-            .box(INNER_LINE_WIDTH, GRID_HEIGHT, height)
+            .box(INNER_LINE_WIDTH_MM, GRID_HEIGHT_MM, height)
         )
 
     # Horizontal grid lines
     for row in range(1, GRID_ROWS):
-        y = grid_y0 + row * CELL_SIZE
+        y = grid_y0 + row * CELL_SIZE_MM
         parts.append(
             cq.Workplane("XY")
             .transformed(offset=(0, y, top_z + height / 2))
-            .box(GRID_WIDTH, INNER_LINE_WIDTH, height)
+            .box(GRID_WIDTH_MM, INNER_LINE_WIDTH_MM, height)
         )
 
     # Numbers
@@ -116,24 +106,24 @@ def _build_overlay_shape(
             val = card[row_idx][col_idx]
             if val is None:
                 continue
-            cx = grid_x0 + (col_idx + 0.5) * CELL_SIZE
-            cy = -grid_y0 - (row_idx + 0.5) * CELL_SIZE
+            cx = grid_x0 + (col_idx + 0.5) * CELL_SIZE_MM
+            cy = -grid_y0 - (row_idx + 0.5) * CELL_SIZE_MM
             parts.append(
                 cq.Workplane("XY")
                 .transformed(offset=(cx, cy, top_z))
-                .text(str(val), TEXT_SIZE, height, font=TEXT_FONT, halign="center", valign="center")
+                .text(str(val), TEXT_SIZE_MM, height, font=TEXT_FONT, halign="center", valign="center")
             )
 
     # Seq label on outer frame sides (vertical, centered, frame breaks around it)
     if seq > 0:
-        label = f"\u2116 {seq:03d}"
-        frame_x = CARD_WIDTH / 2 - FRAME_MARGIN
+        label = seq_label(seq)
+        frame_x = CARD_WIDTH_MM / 2 - FRAME_MARGIN_MM
         for side in (-1, 1):
-            x = side * (frame_x - OUTER_LINE_WIDTH / 2)
+            x = side * (frame_x - OUTER_LINE_WIDTH_MM / 2)
             parts.append(
                 cq.Workplane("XY")
                 .transformed(offset=(x, 0, top_z), rotate=(0, 0, side * 90))
-                .text(label, SEQ_FONT_SIZE, height, font=TEXT_FONT, halign="center", valign="center")
+                .text(label, SEQ_FONT_SIZE_MM, height, font=TEXT_FONT, halign="center", valign="center")
             )
 
     result = parts[0]
@@ -145,26 +135,22 @@ def _build_overlay_shape(
 def _make_frame_parts_at(top_z: float, height: float, seq: int = 0) -> list[cq.Workplane]:
     """Create a double frame at given height. Outer frame breaks for seq label."""
     z = top_z + height / 2
-    half_w = CARD_WIDTH / 2
-    half_h = CARD_HEIGHT / 2
+    half_w = CARD_WIDTH_MM / 2
+    half_h = CARD_HEIGHT_MM / 2
 
-    outer_hw = half_w - FRAME_MARGIN
-    outer_hh = half_h - FRAME_MARGIN
+    outer_hw = half_w - FRAME_MARGIN_MM
+    outer_hh = half_h - FRAME_MARGIN_MM
 
     if seq > 0:
-        # Outer frame with gap in left/right sides for seq label
-        # Estimate label height (text is rotated 90, so "height" in Y = text width)
-        label = f"\u2116 {seq:03d}"
-        gap_half = len(label) * SEQ_FONT_SIZE * 0.4 + SEQ_PADDING
         parts = _make_rect_frame_with_side_gaps(
-            outer_hw, outer_hh, OUTER_LINE_WIDTH, z, height, gap_half,
+            outer_hw, outer_hh, OUTER_LINE_WIDTH_MM, z, height, seq_gap_half_mm(seq),
         )
     else:
-        parts = _make_rect_frame_at(outer_hw, outer_hh, OUTER_LINE_WIDTH, z, height)
+        parts = _make_rect_frame_at(outer_hw, outer_hh, OUTER_LINE_WIDTH_MM, z, height)
 
     # Inner frame (always complete)
-    inset = FRAME_MARGIN + OUTER_LINE_WIDTH + FRAME_GAP
-    parts.extend(_make_rect_frame_at(half_w - inset, half_h - inset, INNER_FRAME_WIDTH, z, height))
+    inset = FRAME_MARGIN_MM + OUTER_LINE_WIDTH_MM + FRAME_GAP_MM
+    parts.extend(_make_rect_frame_at(half_w - inset, half_h - inset, INNER_FRAME_WIDTH_MM, z, height))
     return parts
 
 
@@ -185,21 +171,17 @@ def _make_rect_frame_with_side_gaps(
     gap_half: float,
 ) -> list[cq.Workplane]:
     """Create a rectangle frame with gaps in the left and right sides for labels."""
-    # Top and bottom bars (full width)
     parts = [
         cq.Workplane("XY").transformed(offset=(0, half_h - lw / 2, z)).box(2 * half_w, lw, height),
         cq.Workplane("XY").transformed(offset=(0, -half_h + lw / 2, z)).box(2 * half_w, lw, height),
     ]
-    # Left and right sides: split into upper and lower segments with gap in center
-    seg_len = half_h - gap_half  # length of each segment
+    seg_len = half_h - gap_half
     for side in (-1, 1):
         x = side * (half_w - lw / 2)
-        # Upper segment
         upper_cy = gap_half + seg_len / 2
         parts.append(
             cq.Workplane("XY").transformed(offset=(x, upper_cy, z)).box(lw, seg_len, height)
         )
-        # Lower segment
         lower_cy = -(gap_half + seg_len / 2)
         parts.append(
             cq.Workplane("XY").transformed(offset=(x, lower_cy, z)).box(lw, seg_len, height)
@@ -234,7 +216,7 @@ def render_stl(
     mode = "inlay" if inlay else "raised"
     t0 = time.monotonic()
 
-    out(f"  Mode: {mode} | base plate {CARD_WIDTH}x{CARD_HEIGHT}x{BASE_THICKNESS} mm")
+    out(f"  Mode: {mode} | base plate {CARD_WIDTH_MM}x{CARD_HEIGHT_MM}x{BASE_THICKNESS} mm")
 
     if not inlay:
         base = _build_base()

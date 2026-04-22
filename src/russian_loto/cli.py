@@ -192,7 +192,7 @@ Examples:
   loto gen -t pdf -n 4 -o game.pdf  Generate 4 cards to game.pdf
   loto gen -t stl -n 2              Generate 2 STL cards (inlay, default)
   loto gen -t stl -n 2 --raised     Generate 2 STL cards (raised numbers)
-  loto gen -t stl -n 2 --no-seq     Generate without card number on sides
+  loto gen -t stl -n 2 --no-seq     Generate without card number on sides (also works for pdf)
   loto gen -t stl --no-register     Test print without saving to registry
   loto ls                           List all previously printed cards
   loto show --seq 1                 Show card #001 layout in the terminal
@@ -242,7 +242,7 @@ def main():
 @click.option("--inlay/--raised", default=True, show_default=True,
               help="STL style: engraved into base (inlay) or raised above base.")
 @click.option("--seq-label/--no-seq", default=True, show_default=True,
-              help="STL: print card number on the sides.")
+              help="Print card number on the sides of the card.")
 def cmd_gen(output_type: str, cards: int, output: str, output_dir: str, no_register: bool, inlay: bool, seq_label: bool) -> None:
     """Generate loto cards (PDF or STL)."""
     if cards < 1:
@@ -260,12 +260,14 @@ def cmd_gen(output_type: str, cards: int, output: str, output_dir: str, no_regis
         start = registry.count() + 1
         numbered = [(start + i, card) for i, card in enumerate(card_list)]
 
+    labelled = numbered if seq_label else [(0, c) for _, c in numbered]
+
     if output_type == "stl":
         render_stl(numbered, output_dir, log=click.echo, inlay=inlay, show_seq=seq_label)
         mode = "inlay" if inlay else "raised"
         click.echo(f"Generated {cards} {mode} STL cards -> {output_dir}/")
     else:
-        render_pdf(card_list, output)
+        render_pdf(labelled, output)
         click.echo(f"Generated {cards} cards -> {output}")
 
 
@@ -339,7 +341,7 @@ def cmd_show(seq: int | None, card_hash: str | None) -> None:
 @click.option("--inlay/--raised", default=True, show_default=True,
               help="STL style: engraved into base (inlay) or raised above base.")
 @click.option("--seq-label/--no-seq", default=True, show_default=True,
-              help="STL: print card number on the sides.")
+              help="Print card number on the sides of the card.")
 def cmd_reprint(seq: int | None, card_hash: str | None, output_type: str, output: str, output_dir: str, force: bool, inlay: bool, seq_label: bool) -> None:
     """Reprint an existing card in a different format."""
     if seq is None and card_hash is None:
@@ -377,10 +379,11 @@ def cmd_reprint(seq: int | None, card_hash: str | None, output_type: str, output
 
     click.echo(f"Reprinting #{card_seq:03d} {cid} as {output_type.upper()}...")
 
+    label_seq = card_seq if seq_label else 0
     if output_type == "stl":
         render_stl([(card_seq, card)], output_dir, log=click.echo, inlay=inlay, show_seq=seq_label)
     else:
-        render_pdf([card], output)
+        render_pdf([(label_seq, card)], output)
         click.echo(f"  -> {output}")
 
     registry.register(card, output_type)
