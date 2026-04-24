@@ -1,0 +1,52 @@
+/* Base theme tokens and shared primitives.
+ *
+ * Scope: variables + global reset + body/typography. Everything here is
+ * independent of the admin-page layout and can be loaded by any future
+ * page (e.g. /display) that wants the same look and feel.
+ */
+
+:root {
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --text: #1c1c1e;
+  --text-dim: #636366;
+  --border: #d1d1d6;
+  --accent: #ff6b35;
+  --accent-text: #ffffff;
+  --level1: #5856d6;
+  --level2: #af52de;
+  --level3: #ff3b30;
+  --modal-bg: rgba(0, 0, 0, 0.5);
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --text: #ffffff;
+    --text-dim: #98989d;
+    --border: #38383a;
+    --accent: #ff6b35;
+    --accent-text: #ffffff;
+    --level1: #7d7aff;
+    --level2: #d573ff;
+    --level3: #ff6058;
+    --modal-bg: rgba(0, 0, 0, 0.7);
+    --shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  }
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0;
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+body {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  min-height: 100vh;
+}

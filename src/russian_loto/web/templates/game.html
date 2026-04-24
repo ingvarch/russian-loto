@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a1a">
+<title>Russian Loto -- Live Game</title>
+<link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/game.css">
+</head>
+<body>
+
+<header>
+  <div class="counter">
+    <span id="counter-called">0</span><span class="total">/90</span>
+    <span class="card-count" id="card-count"></span>
+  </div>
+  <button class="new-game-btn" id="new-game-btn">Новая игра</button>
+</header>
+
+<div class="grid-wrap">
+  <div class="grid" id="number-grid"></div>
+</div>
+
+<section class="close-section hidden" id="close-section">
+  <span class="close-label" id="close-label">4 из 5 в линии:</span>
+  <span class="close-list" id="close-list"></span>
+</section>
+
+<section class="payout-section hidden" id="payout-section">
+  <div class="payout-title">
+    <span>Банк</span>
+    <span class="total" id="payout-total">0</span>
+  </div>
+  <div class="payout-grid" id="payout-grid"></div>
+</section>
+
+<section class="log-section">
+  <div class="log-title">События</div>
+  <div id="log"></div>
+</section>
+
+<div class="modal-backdrop" id="confirm-uncall">
+  <div class="modal">
+    <p class="modal-title">Отжать число <span id="confirm-uncall-num"></span>?</p>
+    <p class="modal-text">Связанные события могут исчезнуть из лога.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" data-action="cancel">Отмена</button>
+      <button class="btn-confirm" data-action="confirm">Отжать</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="new-game-modal">
+  <div class="modal modal-wide">
+    <p class="modal-title">Новая игра</p>
+    <p class="modal-text">Все отмеченные числа и события будут удалены.</p>
+
+    <div class="modal-form">
+      <div class="form-row">
+        <label>Банк (0 — без денег)</label>
+        <input type="number" id="ng-jackpot" min="0" step="1" value="0" inputmode="numeric">
+      </div>
+
+      <div class="form-row">
+        <label>Пресет</label>
+        <div class="preset-buttons" id="ng-presets">
+          <button type="button" data-preset="classic" data-pct="10,25,65">Классика</button>
+          <button type="button" data-preset="no-one" data-pct="0,30,70">Без 1-й линии</button>
+          <button type="button" data-preset="custom">Свой</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>Проценты по уровням (сумма = 100)</label>
+        <div class="pct-inputs">
+          <div class="form-row">
+            <label>одна линия</label>
+            <input type="number" id="ng-pct1" min="0" max="100" step="1" value="10" inputmode="numeric">
+          </div>
+          <div class="form-row">
+            <label>две линии</label>
+            <input type="number" id="ng-pct2" min="0" max="100" step="1" value="25" inputmode="numeric">
+          </div>
+          <div class="form-row">
+            <label>полное лото</label>
+            <input type="number" id="ng-pct3" min="0" max="100" step="1" value="65" inputmode="numeric">
+          </div>
+        </div>
+      </div>
+
+      <label class="split-row">
+        <input type="checkbox" id="ng-split" checked>
+        <div>
+          <div class="split-label">Делить поровну при ничьих</div>
+          <div class="split-hint">Если выключено — ведущий выбирает победителя вручную.</div>
+        </div>
+      </label>
+
+      <div class="form-row">
+        <label>Карты в игре</label>
+        <input type="text" id="ng-cards" placeholder="все" inputmode="text"
+               style="font-variant-numeric: tabular-nums;">
+        <div class="form-hint" id="ng-cards-hint"></div>
+      </div>
+
+      <div class="preview hidden" id="ng-preview">
+        <div class="preview-title">Предварительная разбивка</div>
+        <div class="preview-row"><span>одна линия</span><span id="ng-preview-1">0</span></div>
+        <div class="preview-row"><span>две линии</span><span id="ng-preview-2">0</span></div>
+        <div class="preview-row"><span>полное лото</span><span id="ng-preview-3">0</span></div>
+      </div>
+
+      <div class="form-error" id="ng-error"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" data-action="cancel">Отмена</button>
+      <button class="btn-confirm" data-action="confirm">Начать игру</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="confirm-win-continue">
+  <div class="modal">
+    <p class="modal-title">Продолжить игру?</p>
+    <p class="modal-text">Игра продолжится в текущем состоянии. Убедитесь, что учли победу.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" data-action="cancel">Отмена</button>
+      <button class="btn-confirm" data-action="confirm">Продолжить</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="tiebreak-modal">
+  <div class="modal">
+    <p class="modal-title" id="tiebreak-title">Ничья на уровне</p>
+    <p class="modal-text" id="tiebreak-text">Несколько билетов закрыли уровень одновременно. Проведи мини-испытание и выбери победителя.</p>
+    <div class="tiebreak-candidates" id="tiebreak-candidates"></div>
+  </div>
+</div>
+
+<div class="win-backdrop" id="win-backdrop">
+  <div class="win-modal">
+    <div class="win-title">Полное лото!</div>
+    <div class="win-seq" id="win-seq">#000</div>
+    <div class="win-cid" id="win-cid"></div>
+    <div class="win-amount hidden" id="win-amount">
+      <div class="win-amount-label">Выигрыш</div>
+      <div class="win-amount-value" id="win-amount-value">0</div>
+      <div class="win-amount-note hidden" id="win-amount-note"></div>
+    </div>
+    <div class="win-actions">
+      <button class="btn-continue" id="win-continue-btn">Продолжить игру</button>
+      <button class="btn-new-game" id="win-new-game-btn">Новая игра</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet-backdrop" id="sheet-backdrop"></div>
+<div class="sheet" id="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <span class="sheet-seq" id="sheet-seq"></span>
+    <span class="sheet-cid" id="sheet-cid"></span>
+    <span class="sheet-stars" id="sheet-stars"></span>
+    <span class="sheet-progress" id="sheet-progress"></span>
+  </div>
+  <div class="card-grid" id="sheet-card"></div>
+</div>
+
+<script type="application/json" id="cards-data">{{CARDS_JSON}}</script>
+<script type="application/json" id="server-range">{{SERVER_RANGE}}</script>
+
+<script type="module" src="/static/js/main-game.js"></script>
+
+</body>
+</html>

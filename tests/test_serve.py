@@ -12,7 +12,7 @@ from http.server import HTTPServer
 from russian_loto.card import card_numbers, generate_unique_cards
 from russian_loto.constants import COLUMN_RANGES
 from russian_loto.registry import Registry, card_id
-from russian_loto.serve import (
+from russian_loto.web import (
     build_cards_payload,
     check_basic_auth,
     generate_auth_code,
@@ -266,32 +266,32 @@ class TestCheckBasicAuth:
 
 class TestParseCardsRange:
     def test_simple_range(self):
-        from russian_loto.serve import parse_cards_range
+        from russian_loto.web import parse_cards_range
         assert parse_cards_range("1-25") == (1, 25)
 
     def test_single_number(self):
-        from russian_loto.serve import parse_cards_range
+        from russian_loto.web import parse_cards_range
         assert parse_cards_range("5") == (5, 5)
 
     def test_whitespace_stripped(self):
-        from russian_loto.serve import parse_cards_range
+        from russian_loto.web import parse_cards_range
         assert parse_cards_range(" 3 - 20 ") == (3, 20)
 
     def test_invalid_raises(self):
         import pytest
-        from russian_loto.serve import parse_cards_range
+        from russian_loto.web import parse_cards_range
         with pytest.raises(ValueError):
             parse_cards_range("abc")
 
     def test_inverted_range_raises(self):
         import pytest
-        from russian_loto.serve import parse_cards_range
+        from russian_loto.web import parse_cards_range
         with pytest.raises(ValueError):
             parse_cards_range("25-1")
 
     def test_zero_raises(self):
         import pytest
-        from russian_loto.serve import parse_cards_range
+        from russian_loto.web import parse_cards_range
         with pytest.raises(ValueError):
             parse_cards_range("0-5")
 
@@ -366,6 +366,109 @@ class TestHandlerAuth:
                 raise AssertionError("expected 401")
             except urllib.error.HTTPError as e:
                 assert e.code == 401
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+
+
+class TestStaticFiles:
+    """The server exposes web/static/ under /static/ so the page can load
+    external CSS/JS. The whitelist + subpath regex must not let anything
+    traverse out of that tree."""
+
+    def _start_server(self, auth_code: str | None = None) -> tuple[HTTPServer, threading.Thread, int]:
+        handler_cls = make_handler("<!doctype html><p>x</p>", auth_code=auth_code)
+        server = HTTPServer(("127.0.0.1", 0), handler_cls)
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        return server, thread, port
+
+    def test_existing_css_file_is_served(self):
+        """base.css exists in the package tree; serving it should return 200
+        with text/css content-type."""
+        server, thread, port = self._start_server()
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/static/css/base.css") as resp:
+                assert resp.status == 200
+                assert resp.headers["Content-Type"].startswith("text/css")
+                # Placeholder file content is a short comment; any bytes is fine.
+                assert resp.read() is not None
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+
+    def test_existing_js_file_is_served(self):
+        server, thread, port = self._start_server()
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/static/js/main-game.js") as resp:
+                assert resp.status == 200
+                assert resp.headers["Content-Type"].startswith("text/javascript")
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+
+    def test_unknown_static_returns_404(self):
+        server, thread, port = self._start_server()
+        try:
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/static/does-not-exist.css")
+                raise AssertionError("expected 404")
+            except urllib.error.HTTPError as e:
+                assert e.code == 404
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+
+    def test_disallowed_extension_returns_404(self):
+        """Even if the file exists in the package (e.g. __init__.py), any
+        non-whitelisted extension must 404 so we cannot leak Python source."""
+        server, thread, port = self._start_server()
+        try:
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/static/__init__.py")
+                raise AssertionError("expected 404")
+            except urllib.error.HTTPError as e:
+                assert e.code == 404
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+
+    def test_traversal_with_dotdot_returns_404(self):
+        server, thread, port = self._start_server()
+        try:
+            # urllib normalizes /static/../server.py to /server.py which bypasses
+            # /static/ entirely and hits the main 404. Use a raw socket to send
+            # the unnormalized path and confirm the server itself rejects it.
+            import http.client
+            conn = http.client.HTTPConnection("127.0.0.1", port)
+            conn.request("GET", "/static/../server.py")
+            resp = conn.getresponse()
+            assert resp.status == 404
+            conn.close()
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+
+    def test_auth_protects_static_assets(self):
+        server, thread, port = self._start_server(auth_code="123456")
+        try:
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/static/css/base.css")
+                raise AssertionError("expected 401")
+            except urllib.error.HTTPError as e:
+                assert e.code == 401
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+
+    def test_static_with_correct_auth_returns_200(self):
+        server, thread, port = self._start_server(auth_code="123456")
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{port}/static/css/base.css")
+            req.add_header("Authorization", "Basic " + base64.b64encode(b":123456").decode())
+            with urllib.request.urlopen(req) as resp:
+                assert resp.status == 200
         finally:
             server.shutdown()
             thread.join(timeout=2)

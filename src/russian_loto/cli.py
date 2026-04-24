@@ -7,7 +7,7 @@ from russian_loto.constants import COLUMN_RANGES, GRID_COLS, GRID_ROWS
 from russian_loto.registry import Registry, card_id
 from russian_loto.render import render_pdf
 from russian_loto.render_stl import render_stl
-from russian_loto.serve import generate_auth_code, parse_cards_range, serve
+from russian_loto.web import generate_auth_code, parse_cards_range, serve
 
 
 def _parse_seq_range(spec: str) -> list[int]:

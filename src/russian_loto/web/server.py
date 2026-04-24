@@ -6,87 +6,31 @@ registered cards baked in as JSON. All game logic runs in the browser.
 """
 
 import base64
-import json
+import re
 import secrets
 import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from importlib import resources
 
 from russian_loto.registry import Registry
+from russian_loto.web.payload import build_cards_payload, list_skipped_seqs, render_page
 
 
-def parse_cards_range(spec: str) -> tuple[int, int]:
-    """Parse a 'START-END' or 'N' spec into an inclusive (lo, hi) tuple.
+STATIC_PREFIX = "/static/"
 
-    Raises ValueError on invalid input, inverted ranges, or non-positive numbers.
-    """
-    spec = spec.strip().replace(" ", "")
-    if not spec:
-        raise ValueError("empty cards range")
-    if "-" in spec:
-        parts = spec.split("-", 1)
-        if not parts[0] or not parts[1]:
-            raise ValueError(f"bad range {spec!r}")
-        lo, hi = int(parts[0]), int(parts[1])
-    else:
-        lo = hi = int(spec)
-    if lo < 1 or hi < 1:
-        raise ValueError(f"range values must be >= 1, got {spec!r}")
-    if lo > hi:
-        raise ValueError(f"inverted range {spec!r}")
-    return (lo, hi)
+# Whitelist of file extensions we are willing to serve out of the static tree,
+# mapped to Content-Type values. Any request for a different extension returns 404
+# rather than leaking, say, .py source that might end up in the package tree.
+_STATIC_MIME = {
+    ".css": "text/css; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+}
 
-
-def build_cards_payload(
-    registry: Registry,
-    seq_range: tuple[int, int] | None = None,
-) -> list[dict]:
-    """Serialize every registered card with its stored row layout.
-
-    Cards without a stored row layout (legacy entries) are excluded -- showing
-    a guessed layout would silently mislead the verifier. Use `list_skipped_seqs`
-    to learn which cards were dropped so the host can fix them via `loto fix-rows`.
-
-    When *seq_range* is a ``(lo, hi)`` tuple, only cards whose ``seq`` falls
-    within ``[lo, hi]`` inclusive are returned.
-    """
-    payload = []
-    for cid in registry.all_ids():
-        rows = registry.get_rows(cid)
-        if rows is None:
-            continue
-        seq = registry.get_seq(cid)
-        if seq_range is not None and not (seq_range[0] <= seq <= seq_range[1]):
-            continue
-        payload.append({
-            "seq": seq,
-            "cid": cid,
-            "numbers": sorted(registry.get_numbers(cid)),
-            "rows": rows,
-        })
-    payload.sort(key=lambda e: e["seq"])
-    return payload
-
-
-def list_skipped_seqs(registry: Registry) -> list[int]:
-    """Return the seq numbers of registry entries excluded from the game UI."""
-    skipped = []
-    for cid in registry.all_ids():
-        if registry.get_rows(cid) is None:
-            skipped.append(registry.get_seq(cid))
-    return sorted(skipped)
-
-
-def render_page(
-    payload: list[dict],
-    seq_range: tuple[int, int] | None = None,
-) -> str:
-    """Read the HTML template and inject the cards payload as inline JSON."""
-    template = resources.files("russian_loto.templates").joinpath("game.html").read_text(encoding="utf-8")
-    range_json = json.dumps(list(seq_range)) if seq_range else "null"
-    return (template
-            .replace("{{CARDS_JSON}}", json.dumps(payload, ensure_ascii=False))
-            .replace("{{SERVER_RANGE}}", range_json))
+# Subpath under /static/ must be simple: letters, digits, dot, dash, underscore,
+# slash. No ".." segments, no leading slash. This plus the extension whitelist
+# means an attacker cannot traverse out of the package.
+_STATIC_SUBPATH_RE = re.compile(r"^[A-Za-z0-9._/-]+$")
 
 
 def generate_auth_code() -> str:
@@ -113,15 +57,39 @@ def check_basic_auth(header: str | None, expected: str) -> bool:
     return secrets.compare_digest(password, expected)
 
 
+def _load_static(subpath: str) -> tuple[bytes, str] | None:
+    """Read a file from the package static/ tree. Returns (body, content-type) or None.
+
+    Returns None for any path that fails validation (traversal attempt, wrong
+    extension, not a file, missing). The single None return collapses every
+    failure mode into the same 404 response -- callers don't need to distinguish.
+    """
+    if not subpath or not _STATIC_SUBPATH_RE.match(subpath) or ".." in subpath.split("/"):
+        return None
+    ext = "." + subpath.rsplit(".", 1)[-1] if "." in subpath else ""
+    content_type = _STATIC_MIME.get(ext)
+    if content_type is None:
+        return None
+    try:
+        root = resources.files("russian_loto.web.static")
+        resource = root.joinpath(subpath)
+        if not resource.is_file():
+            return None
+        return resource.read_bytes(), content_type
+    except (FileNotFoundError, OSError, ModuleNotFoundError):
+        return None
+
+
 def make_handler(
     html: str,
     auth_code: str | None = None,
 ) -> type[BaseHTTPRequestHandler]:
-    """Build a request handler that serves a single HTML string at `/`.
+    """Build a request handler that serves the game page at `/` and static assets at `/static/*`.
 
-    When `auth_code` is set, every request must include an HTTP Basic auth
-    header with that code as the password; requests without valid auth get
-    401 with a `WWW-Authenticate` header so the browser prompts for credentials.
+    When `auth_code` is set, every request (including static assets) must include
+    an HTTP Basic auth header with that code as the password; requests without
+    valid auth get 401 with a `WWW-Authenticate` header so the browser prompts
+    for credentials.
     """
     body = html.encode("utf-8")
 
@@ -136,16 +104,31 @@ def make_handler(
                     self.wfile.write(b"Authentication required")
                     return
             if self.path == "/":
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-            else:
-                self.send_response(404)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
-                self.end_headers()
-                self.wfile.write(b"Not found")
+                self._send_bytes(200, "text/html; charset=utf-8", body)
+                return
+            if self.path.startswith(STATIC_PREFIX):
+                subpath = self.path[len(STATIC_PREFIX):]
+                loaded = _load_static(subpath)
+                if loaded is None:
+                    self._send_404()
+                    return
+                asset_body, content_type = loaded
+                self._send_bytes(200, content_type, asset_body)
+                return
+            self._send_404()
+
+        def _send_bytes(self, status: int, content_type: str, payload: bytes) -> None:
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def _send_404(self) -> None:
+            self.send_response(404)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"Not found")
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002
             return  # silence default access log; the host doesn't need it
@@ -194,7 +177,7 @@ def serve(
 
     range_note = ""
     if seq_range:
-        range_note = f" (#{seq_range[0]:03d}\u2013#{seq_range[1]:03d})"
+        range_note = f" (#{seq_range[0]:03d}–#{seq_range[1]:03d})"
     lan = _detect_lan_ip()
     print("Russian Loto game server", flush=True)
     print(f"  Cards in game: {len(payload)}{range_note}", flush=True)
