@@ -1,0 +1,283 @@
+/* Display page styles — optimized for TV/projector.
+ *
+ * Always dark background for maximum contrast on a projector. Font sizes
+ * are larger than the admin page; the grid dominates the viewport with a
+ * sidebar for close-counts and winners.
+ */
+
+:root {
+  --bg: #000000;
+  --surface: #1c1c1e;
+  --text: #ffffff;
+  --text-dim: #98989d;
+  --border: #38383a;
+  --accent: #ff6b35;
+  --accent-text: #ffffff;
+  --level1: #7d7aff;
+  --level2: #d573ff;
+  --level3: #ff6058;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #000000;
+    --surface: #1c1c1e;
+    --text: #ffffff;
+    --text-dim: #98989d;
+    --border: #38383a;
+    --accent: #ff6b35;
+    --accent-text: #ffffff;
+    --level1: #7d7aff;
+    --level2: #d573ff;
+    --level3: #ff6058;
+  }
+}
+
+/* ---- Layout ------------------------------------------------------------- */
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.counter {
+  font-size: 2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.counter .total {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.status {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  transition: opacity 0.3s;
+}
+
+.status.connected {
+  opacity: 0;
+}
+
+main {
+  display: flex;
+  gap: 24px;
+  padding: 16px 24px;
+  height: calc(100vh - 60px);
+  align-items: flex-start;
+}
+
+/* ---- Grid --------------------------------------------------------------- */
+
+.grid-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 4px;
+  max-width: 900px;
+}
+
+.cell {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(1.2rem, 3vw, 2.4rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-dim);
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+  user-select: none;
+}
+
+.cell.called {
+  background: var(--accent);
+  color: var(--accent-text);
+  transform: scale(1.04);
+}
+
+.cell.placeholder {
+  visibility: hidden;
+}
+
+.cell.last-called {
+  box-shadow: 0 0 0 3px var(--accent), 0 0 16px rgba(255, 107, 53, 0.5);
+}
+
+/* ---- Sidebar ------------------------------------------------------------ */
+
+.sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.section-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+
+/* ---- Prize pool --------------------------------------------------------- */
+
+.prize-section.hidden {
+  display: none;
+}
+
+.prize-total {
+  font-size: 2.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  margin-bottom: 12px;
+  line-height: 1;
+}
+
+.prize-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prize-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--surface);
+  border-radius: 10px;
+  border-left: 4px solid var(--border);
+}
+
+.prize-row.level-1 { border-left-color: var(--level1); }
+.prize-row.level-2 { border-left-color: var(--level2); }
+.prize-row.level-3 { border-left-color: var(--level3); }
+
+.prize-label {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.prize-amount {
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* ---- Close counts ------------------------------------------------------- */
+
+.close-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.close-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--surface);
+  border-radius: 10px;
+  border-left: 4px solid var(--border);
+}
+
+.close-row.level-1 { border-left-color: var(--level1); }
+.close-row.level-2 { border-left-color: var(--level2); }
+.close-row.level-3 { border-left-color: var(--level3); }
+
+.close-label {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.close-count {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  min-width: 2ch;
+  text-align: right;
+}
+
+/* ---- Winners ------------------------------------------------------------ */
+
+.winners-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.winner-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--surface);
+  border-radius: 10px;
+  border-left: 4px solid var(--border);
+  transition: background 0.3s, border-color 0.3s;
+}
+
+.winner-row.level-1 { border-left-color: var(--level1); }
+.winner-row.level-2 { border-left-color: var(--level2); }
+.winner-row.level-3 { border-left-color: var(--level3); }
+
+.winner-label {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.winner-seq {
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.winner-row.won .winner-seq {
+  color: var(--text);
+}
+
+.winner-row.won.level-1 .winner-seq { color: var(--level1); }
+.winner-row.won.level-2 .winner-seq { color: var(--level2); }
+.winner-row.won.level-3 .winner-seq { color: var(--level3); }
+
+.winner-row.won.level-3 {
+  background: rgba(255, 96, 88, 0.15);
+}
+
+/* ---- Responsive: tall/narrow screens ------------------------------------ */
+
+@media (max-width: 800px) {
+  main {
+    flex-direction: column;
+    height: auto;
+  }
+  .sidebar {
+    width: 100%;
+    flex-direction: row;
+    gap: 16px;
+  }
+  .close-section,
+  .winners-section {
+    flex: 1;
+  }
+}

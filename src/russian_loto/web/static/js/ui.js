@@ -12,6 +12,7 @@ import * as logic from "./logic.js";
 import * as state from "./state.js";
 
 const LEVEL_LABELS = { 1: "одна линия", 2: "две линии", 3: "ПОЛНОЕ ЛОТО" };
+const LEVEL_LABELS_ACCUSATIVE = { 1: "одну линию", 2: "две линии", 3: "ПОЛНОЕ ЛОТО" };
 
 // Loto column ranges: col 0 = 1..9 (9 numbers), cols 1..7 = 10..79 (10 each),
 // col 8 = 80..90 (11 numbers). We use a 9x11 grid; short columns have placeholders
@@ -21,17 +22,29 @@ const GRID_COLS = 9;
 
 let CARDS = [];
 let current = null;
+let onSaveHook = null;   // optional callback fired after every persist()
 
 function active() { return logic.activeCards(CARDS, current.cardRange); }
 function calledSet() { return logic.calledSet(current.called); }
 function payouts() { return logic.computePayouts(current, active()); }
 function formatAmount(n) { return (n || 0).toLocaleString("ru-RU"); }
 
+// Single choke-point for writing state: localStorage first (always synchronous
+// and fast), then the optional hook which callers (main-game.js) use to push
+// to the server so the /display page stays in sync.
+function persist() {
+  state.saveState(current);
+  if (onSaveHook) {
+    try { onSaveHook(current); } catch (_e) { /* hook errors must not break UI */ }
+  }
+}
+
 // ---- Public entry point --------------------------------------------------
 
-export function init({ cards, initialState }) {
+export function init({ cards, initialState, onSave }) {
   CARDS = cards;
   current = initialState;
+  onSaveHook = onSave || null;
 
   buildGrid();
   wireUncallModal();
@@ -41,10 +54,12 @@ export function init({ cards, initialState }) {
   wireBottomSheet();
 
   // Reconcile stored state on load: cardLevel may be stale if CARDS changed
-  // (e.g. the server restarted with a different registry). Recompute fresh
-  // from the current called set.
+  // (e.g. the server restarted with a different registry). Any level
+  // crossings found during reconciliation are emitted as pending events
+  // exactly like during normal play -- the admin confirms them via the
+  // same modal.
   state.recompute(current, active(), state.nowHHMM());
-  state.saveState(current);
+  persist();
   render();
 }
 
@@ -80,22 +95,37 @@ function numberAt(col, row) {
 }
 
 function onCellClick(n) {
+  // The grid is set `.blocked` while any pending event or unresolved tiebreak
+  // exists, but clicks can still arrive via keyboard events etc. -- double
+  // guard here.
+  if (logic.hasPendingEvents(current)) return;
+  if (logic.nextTiebreakBatch(current, active())) return;
   if (current.called.includes(n)) {
     askUncall(n);
   } else {
-    const { bingoCard } = state.applyCallNumber(current, n, active());
-    state.saveState(current);
+    state.applyCallNumber(current, n, active());
+    persist();
     render();
-    if (bingoCard) {
-      // If level-3 payout is pending (unresolved tiebreak), defer the overlay
-      // until the host picks a winner -- resolveTiebreak will call showWin
-      // with the correct winner.
-      const p = payouts();
-      if (p.status !== "active" || p.level3.status !== "pending") {
-        showWin(bingoCard);
-      }
-    }
+    // Level-3 events that were auto-confirmed by this call (because
+    // levelAutoConfirm[3] was already true) don't go through the confirm
+    // modal and therefore miss the win-overlay trigger there; fire it
+    // here. If the batch needs tiebreak resolution first, the overlay
+    // fires after the host picks -- see resolveTiebreak().
+    maybeShowAutoWin();
   }
+}
+
+function maybeShowAutoWin() {
+  const callCount = current.called.length;
+  const freshWinners = (current.events || []).filter(
+    (e) => e.level === 3 && e.callCount === callCount && e.status === "confirmed",
+  );
+  if (freshWinners.length === 0) return;
+  const tb = logic.nextTiebreakBatch(current, active());
+  if (tb && tb.level === 3 && tb.callCount === callCount) return;
+  freshWinners.sort((a, b) => a.seq - b.seq);
+  const winner = CARDS.find((c) => c.cid === freshWinners[0].cid);
+  if (winner) showWin(winner);
 }
 
 // ---- Render --------------------------------------------------------------
@@ -105,6 +135,7 @@ function render() {
   renderClose();
   renderPayout();
   renderLog();
+  maybeShowConfirmation();
   maybeShowTiebreak();
 }
 
@@ -127,11 +158,16 @@ function renderLog() {
   logEl.innerHTML = "";
   for (const e of current.events) {
     const row = document.createElement("div");
-    row.className = "log-entry level-" + e.level;
+    const status = e.status || "confirmed";
+    row.className = "log-entry level-" + e.level + " status-" + status;
+    const levelText = LEVEL_LABELS[e.level];
+    let suffix = "";
+    if (status === "pending") suffix = " · ждёт подтверждения";
+    else if (status === "absent") suffix = " · не в игре";
     row.innerHTML =
       '<span class="ts">' + e.ts + '</span>' +
       '<span class="seq">#' + String(e.seq).padStart(3, "0") + '</span>' +
-      '<span class="level">' + LEVEL_LABELS[e.level] + '</span>';
+      '<span class="level">' + levelText + suffix + '</span>';
     row.addEventListener("click", () => openSheet(e.cid));
     logEl.appendChild(row);
   }
@@ -198,18 +234,9 @@ function renderPayoutRow(level, label, info) {
     row.classList.add("unclaimed");
     winnersEl.textContent = "ждёт";
     amountEl.textContent = formatAmount(info.base);
-  } else if (info.status === "pending") {
-    row.classList.add("pending");
-    const labelSpan = document.createElement("span");
-    labelSpan.textContent = "ничья: ";
-    winnersEl.appendChild(labelSpan);
-    info.candidates.forEach((card) => {
-      const chip = document.createElement("span");
-      chip.className = "chip-sm";
-      chip.textContent = "#" + String(card.seq).padStart(3, "0");
-      chip.addEventListener("click", () => openSheet(card.cid));
-      winnersEl.appendChild(chip);
-    });
+  } else if (info.status === "pending-tiebreak") {
+    row.classList.add("unclaimed");
+    winnersEl.textContent = "ничья, жду выбора";
     amountEl.textContent = formatAmount(info.base);
   } else if (info.status === "paid") {
     info.winners.forEach((card) => {
@@ -272,7 +299,7 @@ function wireUncallModal() {
   setupModal("confirm-uncall", () => {
     if (pendingUncall !== null) {
       state.applyUncallNumber(current, pendingUncall, active());
-      state.saveState(current);
+      persist();
       render();
       pendingUncall = null;
     }
@@ -451,7 +478,7 @@ function wireNewGameModal() {
     const form = validateNewGameForm();
     if (form === null) return;
     current = state.freshState(form);
-    state.saveState(current);
+    persist();
     render();
     closeWin();
     closeNewGameModal();
@@ -463,61 +490,173 @@ function wireNewGameModal() {
   document.getElementById("new-game-btn").addEventListener("click", openNewGameModal);
 }
 
-// ---- Tiebreak modal ------------------------------------------------------
+// ---- Confirmation modal --------------------------------------------------
+//
+// Fires whenever any event in state is pending. For a singular crossing
+// (one card, the common case) shows a yes/no confirmation. For simultaneous
+// crossings (multiple cards at the same callCount -- the old tiebreak
+// scenario) shows all candidates with per-card [Играет]/[Не в игре]
+// buttons; the modal stays open until every candidate is marked.
+//
+// When the last pending event of a level-3 batch is confirmed, fires the
+// win overlay for the first confirmed card (by seq).
 
-function maybeShowTiebreak() {
-  const modal = document.getElementById("tiebreak-modal");
+function maybeShowConfirmation() {
+  const modal = document.getElementById("confirm-line-modal");
   const grid = document.getElementById("number-grid");
-  const p = payouts();
+  const batch = logic.nextPendingBatch(current, active());
 
-  // Find the first pending level (lowest level number wins).
-  let pending = null;
-  if (p.status === "active") {
-    for (const lvl of [1, 2, 3]) {
-      const info = p["level" + lvl];
-      if (info && info.status === "pending") {
-        pending = { level: lvl, info };
-        break;
-      }
-    }
-  }
-
-  if (!pending) {
+  if (!batch) {
     modal.classList.remove("open");
     grid.classList.remove("blocked");
     return;
   }
 
-  const levelLabel = LEVEL_LABELS[pending.level];
-  document.getElementById("tiebreak-title").textContent = "Ничья: " + levelLabel;
-  const candidatesEl = document.getElementById("tiebreak-candidates");
-  candidatesEl.innerHTML = "";
-  for (const card of pending.info.candidates) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "tiebreak-btn";
+  const levelLabelAcc = LEVEL_LABELS_ACCUSATIVE[batch.level];
+  const titleEl = document.getElementById("confirm-line-title");
+  const hintEl = document.getElementById("confirm-line-hint");
+  titleEl.textContent = batch.candidates.length === 1
+    ? "Карточка закрыла " + levelLabelAcc
+    : batch.candidates.length + " карточки закрыли " + levelLabelAcc + " одновременно";
+  hintEl.textContent = batch.candidates.length === 1
+    ? "Игрок с этой карточкой подтверждает?"
+    : "Отметь каждую: играет или нет.";
+
+  const listEl = document.getElementById("confirm-line-candidates");
+  listEl.innerHTML = "";
+  for (const { event, card } of batch.candidates) {
+    const row = document.createElement("div");
+    row.className = "confirm-candidate";
+
+    const label = document.createElement("div");
+    label.className = "confirm-candidate-label";
     const seqSpan = document.createElement("span");
+    seqSpan.className = "confirm-candidate-seq";
     seqSpan.textContent = "#" + String(card.seq).padStart(3, "0");
+    seqSpan.addEventListener("click", () => openSheet(card.cid));
+    label.appendChild(seqSpan);
     const cidSpan = document.createElement("span");
-    cidSpan.className = "tiebreak-cid";
+    cidSpan.className = "confirm-candidate-cid";
     cidSpan.textContent = card.cid;
-    btn.appendChild(seqSpan);
-    btn.appendChild(cidSpan);
-    btn.addEventListener("click", () => resolveTiebreak(pending.info.tiebreakKey, card.cid));
-    candidatesEl.appendChild(btn);
+    label.appendChild(cidSpan);
+
+    const actions = document.createElement("div");
+    actions.className = "confirm-candidate-actions";
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "btn-confirm-play";
+    confirmBtn.textContent = "Играет";
+    confirmBtn.addEventListener("click", () => resolvePendingEvent(event, "confirmed"));
+    const absentBtn = document.createElement("button");
+    absentBtn.type = "button";
+    absentBtn.className = "btn-confirm-absent";
+    absentBtn.textContent = "Не в игре";
+    absentBtn.addEventListener("click", () => resolvePendingEvent(event, "absent"));
+    actions.appendChild(confirmBtn);
+    actions.appendChild(absentBtn);
+
+    row.appendChild(label);
+    row.appendChild(actions);
+    listEl.appendChild(row);
   }
+
   modal.classList.add("open");
   grid.classList.add("blocked");
 }
 
-function resolveTiebreak(key, cid) {
-  state.applyResolveTiebreak(current, key, cid);
-  state.saveState(current);
+function resolvePendingEvent(event, resolution) {
+  state.applyResolveEvent(current, event, resolution);
+  persist();
+  // If that was the last pending event in a level-3 batch and at least one
+  // card in the batch was confirmed, fire the win overlay. We recompute the
+  // batch identity from `event` since the modal may close between the last
+  // confirmation and the next render.
+  const batchCleared = !(current.events || []).some(
+    (e) =>
+      e.status === "pending" && e.level === event.level && e.callCount === event.callCount,
+  );
   render();
-  // If we just resolved a level-3 tiebreak, the win overlay was deferred by
-  // onCellClick and needs to fire now with the chosen winner.
-  const lvl = parseInt(key.split("-")[0], 10);
-  if (lvl === 3) {
+  if (batchCleared && event.level === 3) {
+    // Skip the overlay if a tiebreak is still required for this batch --
+    // it fires after the host picks (see resolveTiebreak).
+    const tb = logic.nextTiebreakBatch(current, active());
+    if (tb && tb.level === 3 && tb.callCount === event.callCount) return;
+    const confirmed = (current.events || [])
+      .filter(
+        (e) => e.level === 3 && e.callCount === event.callCount && e.status === "confirmed",
+      )
+      .sort((a, b) => a.seq - b.seq);
+    if (confirmed.length > 0) {
+      const winner = CARDS.find((c) => c.cid === confirmed[0].cid);
+      if (winner) showWin(winner);
+    }
+  }
+}
+
+// ---- Tiebreak modal (split=false only) -----------------------------------
+//
+// Fires when `nextTiebreakBatch` reports an unresolved tie: the host ran a
+// mini-game at the table and taps the winning card. After the pick, if the
+// tie was at level 3 we fire the win overlay (same as resolvePendingEvent).
+
+function maybeShowTiebreak() {
+  const modal = document.getElementById("tiebreak-modal");
+  const grid = document.getElementById("number-grid");
+  const batch = logic.nextTiebreakBatch(current, active());
+  if (!batch) {
+    modal.classList.remove("open");
+    // Only remove .blocked if no confirmation modal is up either.
+    if (!logic.hasPendingEvents(current)) grid.classList.remove("blocked");
+    return;
+  }
+
+  const titleEl = document.getElementById("tiebreak-title");
+  const levelText = LEVEL_LABELS_ACCUSATIVE[batch.level];
+  titleEl.textContent = "Ничья: " + batch.candidates.length + " карт закрыли " + levelText;
+
+  const listEl = document.getElementById("tiebreak-candidates");
+  listEl.innerHTML = "";
+  for (const card of batch.candidates) {
+    const row = document.createElement("div");
+    row.className = "confirm-candidate";
+
+    const label = document.createElement("div");
+    label.className = "confirm-candidate-label";
+    const seqSpan = document.createElement("span");
+    seqSpan.className = "confirm-candidate-seq";
+    seqSpan.textContent = "#" + String(card.seq).padStart(3, "0");
+    seqSpan.addEventListener("click", () => openSheet(card.cid));
+    label.appendChild(seqSpan);
+    const cidSpan = document.createElement("span");
+    cidSpan.className = "confirm-candidate-cid";
+    cidSpan.textContent = card.cid;
+    label.appendChild(cidSpan);
+
+    const actions = document.createElement("div");
+    actions.className = "confirm-candidate-actions tiebreak-pick";
+    const pickBtn = document.createElement("button");
+    pickBtn.type = "button";
+    pickBtn.className = "btn-confirm-play";
+    pickBtn.textContent = "Победитель";
+    pickBtn.addEventListener("click", () =>
+      resolveTiebreak(batch.level, batch.callCount, card.cid),
+    );
+    actions.appendChild(pickBtn);
+
+    row.appendChild(label);
+    row.appendChild(actions);
+    listEl.appendChild(row);
+  }
+
+  modal.classList.add("open");
+  grid.classList.add("blocked");
+}
+
+function resolveTiebreak(level, callCount, cid) {
+  state.applyResolveTiebreak(current, { level, callCount }, cid);
+  persist();
+  render();
+  if (level === 3) {
     const winner = CARDS.find((c) => c.cid === cid);
     if (winner) showWin(winner);
   }

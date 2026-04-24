@@ -308,35 +308,78 @@ header {
   min-height: 16px;
 }
 
-/* Tiebreak modal -- shown when split=off and a level was reached by multiple
-   cards on the same call. The grid is disabled while this is open. */
-.tiebreak-candidates {
-  display: flex; flex-direction: column; gap: 8px; margin: 12px 0 16px;
+/* Confirmation modal -- shown for every level crossing until the admin
+   marks each candidate as Играет (in play) or Не в игре. The grid is
+   disabled while this is open so no more numbers can be called. */
+.confirm-candidates {
+  display: flex; flex-direction: column; gap: 8px; margin: 12px 0 4px;
 }
-.tiebreak-btn {
-  width: 100%;
-  padding: 14px;
+.confirm-candidate {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px;
   background: var(--bg);
-  border: 2px solid var(--accent);
-  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  font-size: 18px;
-  font-weight: 700;
-  cursor: pointer;
-  font-variant-numeric: tabular-nums;
-  text-align: left;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
-.tiebreak-btn:active { background: var(--accent); color: var(--accent-text); }
-.tiebreak-btn .tiebreak-cid {
+.confirm-candidate-label {
+  display: flex; align-items: baseline; gap: 10px;
+}
+.confirm-candidate-seq {
+  font-size: 22px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: underline dotted var(--border);
+  text-underline-offset: 3px;
+}
+.confirm-candidate-seq:active { color: var(--accent); }
+.confirm-candidate-cid {
   font-family: ui-monospace, "SF Mono", monospace;
   font-size: 12px;
   color: var(--text-dim);
-  font-weight: 400;
 }
+.confirm-candidate-actions {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.confirm-candidate-actions button {
+  padding: 12px;
+  border-radius: 10px;
+  border: none;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-confirm-play {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.btn-confirm-play:active { opacity: 0.85; }
+.btn-confirm-absent {
+  background: var(--border);
+  color: var(--text);
+}
+.btn-confirm-absent:active { opacity: 0.85; }
 .grid.blocked { pointer-events: none; opacity: 0.4; }
+
+/* Log-entry status variants.
+   - pending: awaiting admin confirmation (grid is blocked, so the entry
+     is mostly transitional, but we still show it so the admin can see what
+     card triggered the modal).
+   - absent: card was first to close but wasn't in the game; dimmed and
+     struck-through so it stays informational without looking like a winner.
+   - confirmed (default): the existing level-colored style. */
+.log-entry.status-pending { opacity: 0.65; border-style: dashed; }
+.log-entry.status-absent {
+  opacity: 0.55;
+  background: transparent;
+  border-left-color: var(--border);
+}
+.log-entry.status-absent .seq,
+.log-entry.status-absent .level {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
 
 .sheet-backdrop {
   position: fixed; inset: 0;

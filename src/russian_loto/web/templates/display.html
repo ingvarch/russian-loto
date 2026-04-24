@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>Russian Loto -- Display</title>
+<link rel="stylesheet" href="/static/css/base.css">
+<link rel="stylesheet" href="/static/css/display.css">
+</head>
+<body>
+
+<header>
+  <div class="counter">
+    <span id="counter-called">0</span><span class="total">/90</span>
+  </div>
+  <div class="status" id="status">connecting...</div>
+</header>
+
+<main>
+  <div class="grid-wrap">
+    <div class="grid" id="number-grid"></div>
+  </div>
+
+  <div class="sidebar">
+    <section class="prize-section hidden" id="prize-section">
+      <div class="section-title">Банк</div>
+      <div class="prize-total" id="prize-total">0</div>
+      <div class="prize-levels">
+        <div class="prize-row level-1">
+          <span class="prize-label">одна линия</span>
+          <span class="prize-amount" id="prize-1">0</span>
+        </div>
+        <div class="prize-row level-2">
+          <span class="prize-label">две линии</span>
+          <span class="prize-amount" id="prize-2">0</span>
+        </div>
+        <div class="prize-row level-3">
+          <span class="prize-label">полное лото</span>
+          <span class="prize-amount" id="prize-3">0</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="close-section" id="close-section">
+      <div class="section-title">4 из 5 в линии</div>
+      <div class="close-levels">
+        <div class="close-row level-1">
+          <span class="close-label">одна линия</span>
+          <span class="close-count" id="close-1">0</span>
+        </div>
+        <div class="close-row level-2">
+          <span class="close-label">две линии</span>
+          <span class="close-count" id="close-2">0</span>
+        </div>
+        <div class="close-row level-3">
+          <span class="close-label">полное лото</span>
+          <span class="close-count" id="close-3">0</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="winners-section" id="winners-section">
+      <div class="section-title">Победители</div>
+      <div class="winners-list">
+        <div class="winner-row level-1" id="winner-1">
+          <span class="winner-label">одна линия</span>
+          <span class="winner-seq">&mdash;</span>
+        </div>
+        <div class="winner-row level-2" id="winner-2">
+          <span class="winner-label">две линии</span>
+          <span class="winner-seq">&mdash;</span>
+        </div>
+        <div class="winner-row level-3" id="winner-3">
+          <span class="winner-label">полное лото</span>
+          <span class="winner-seq">&mdash;</span>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script type="application/json" id="cards-data">{{CARDS_JSON}}</script>
+<script type="application/json" id="server-range">{{SERVER_RANGE}}</script>
+
+<script type="module" src="/static/js/main-display.js"></script>
+
+</body>
+</html>

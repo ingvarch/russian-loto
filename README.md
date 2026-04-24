@@ -142,14 +142,24 @@ loto serve --port 9000           # custom port
 loto serve --host 127.0.0.1      # loopback only (no LAN access)
 ```
 
-Starts a small local web server on your laptop, prints both the loopback URL and the LAN URL, and serves a single HTML page with all registered cards baked in. Open the LAN URL on your phone (your phone and laptop must be on the same Wi-Fi) and you get a tap-friendly verification UI:
+Starts a local web server on your laptop and prints URLs for both the admin page and the read-only display page. Open the admin URL on your phone (same Wi-Fi as your laptop) and the display URL on a TV or projector for players to watch.
+
+**Admin page** (`/`) -- the host's control surface:
 
 - A `9 x 11` grid of buttons covering numbers `1..90`, laid out by Russian Loto column structure (column 1 is `1..9`, column 2 is `10..19`, ..., column 9 is `80..90`). Tap a number when the caller announces it. Tap an already-marked number to un-mark it (with confirmation, since this can rewind game state).
-- A live event log under the grid. When any registered card crosses a win threshold (first line, two lines, full bingo) the event appears at the top of the log with a timestamp and the card's seq number.
-- Tap any log entry to open a bottom sheet showing that card's full `3 x 9` grid with marked cells highlighted, so you can visually confirm whether the player's physical card actually matches the claim.
+- When any registered card crosses a win threshold (first line, two lines, full bingo) the admin sees a confirmation dialog: "confirm" means the card is present and the player is claiming the win; "not in play" means the card is not physically in the game (the crossing is logged but does not count as a winner). This prevents phantom wins from cards that were printed but not distributed.
+- A live event log under the grid. Tap any log entry to open a bottom sheet showing that card's full `3 x 9` grid with marked cells highlighted, so you can visually confirm whether the player's physical card actually matches the claim.
 - Game state lives in the browser's `localStorage`, so accidental refreshes, screen-off, or even server restarts do not lose the game. Use the "Новая игра" button (with confirmation) to start fresh.
 
-The server holds no game state of its own. It is a one-shot HTML delivery mechanism; all logic runs in the browser. Stop it with `Ctrl-C`.
+**Display page** (`/display`) -- read-only screen for players:
+
+- A large `9 x 11` grid showing all called numbers, optimized for TV/projector (forced dark theme, large fonts).
+- "4 из 5 в линии" sidebar: shows how many cards are one number away from closing each level (one line / two lines / full bingo). Updates in real time as numbers are called.
+- Winners sidebar: shows the seq number of the first confirmed winner at each level, or a dash if the level has not been won yet.
+
+The display page receives live state from the admin via Server-Sent Events (SSE). Every time the admin marks or unmarks a number, confirms or rejects a line closure, the state is pushed to the server and broadcast to all connected display clients instantly. The display auto-reconnects on network drops (2-second backoff).
+
+The server holds the latest game snapshot in memory so a display opened mid-game rehydrates immediately, but the admin's browser remains the source of truth. Stop the server with `Ctrl-C`.
 
 Cards without a stored row layout (legacy entries from before the rows feature) are automatically excluded from the live game UI and listed in the startup banner with a hint to run `loto fix-rows --seq N` for each.
 
@@ -289,9 +299,26 @@ src/russian_loto/
     registry.py         -- printed card registry (JSON file with row layouts)
     render.py           -- PDF rendering with Pillow (1:1 visual match with STL)
     render_stl.py       -- STL rendering with CadQuery
-    serve.py            -- live game web server (stdlib http.server)
-    templates/
-        game.html       -- single-page UI for the live game (HTML + inline CSS/JS)
+    web/
+        __init__.py     -- re-exports: serve, parse_cards_range, generate_auth_code
+        server.py       -- HTTP server, router, auth, static-file handler, SSE endpoint
+        payload.py      -- cards payload builder, range parser, template renderer
+        state_store.py  -- thread-safe in-memory state with pub/sub for SSE
+        templates/
+            game.html   -- admin page shell (markup + module script refs)
+            display.html -- read-only display page for TV/projector
+        static/
+            css/
+                base.css    -- theme tokens and reset (shared across pages)
+                game.css    -- admin page styles
+                display.css -- display page styles (forced dark theme)
+            js/
+                logic.js        -- pure functions (levels, close counts, payouts)
+                state.js        -- game state shape, persistence, mutators
+                ui.js           -- admin page DOM rendering and event wiring
+                main-game.js    -- admin page bootstrap
+                display-ui.js   -- display page DOM rendering (9x11 grid, sidebar)
+                main-display.js -- display page bootstrap + SSE connection
 scripts/
     generate_box.py     -- standalone STL generator for the corner-bracket card holder
 tests/
@@ -301,9 +328,14 @@ tests/
     test_render_pdf.py  -- PDF geometry + crop-mark tests
     test_render_stl.py  -- STL geometry tests
     test_generate_box.py -- card holder geometry tests (slow, builds CadQuery solids)
-    test_serve.py       -- web server tests (payload building, handler, skipped legacy)
+    test_serve.py       -- web server tests (payload, handler, static files, auth)
+    test_state_store.py -- StateStore unit tests (get/set, pub/sub, thread safety)
+    test_state_api.py   -- /api/state GET/POST integration tests
+    test_sse_display.py -- SSE /api/events and /display page integration tests
     test_cli_helpers.py -- pure-function tests for CLI parsers (seq range, row input)
     test_cli_reprint.py -- end-to-end tests for `loto reprint` (range support, registry updates)
+    js/
+        logic.test.mjs  -- JS unit tests for logic.js (Node 20+, zero deps)
 bin/
     loto                -- shell wrapper for uv run loto
     loto-game           -- starts loto serve + cloudflared tunnel run together
@@ -312,10 +344,11 @@ bin/
 ## Running tests
 
 ```bash
-uv run pytest                          # all tests
+uv run pytest                          # all tests (includes node --test wrapper)
 uv run pytest tests/test_card.py       # fast: card logic only
 uv run pytest tests/test_registry.py   # fast: registry only
 uv run pytest tests/test_render_stl.py # slow: builds 3D geometry
+node --test tests/js/                  # JS unit tests (Node 20+, zero deps)
 ```
 
 ## License

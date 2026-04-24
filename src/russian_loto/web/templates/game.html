@@ -132,11 +132,19 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="confirm-line-modal">
+  <div class="modal modal-wide">
+    <p class="modal-title" id="confirm-line-title">Карточка закрыла линию</p>
+    <p class="modal-text" id="confirm-line-hint">Игрок с этой карточкой подтверждает?</p>
+    <div class="confirm-candidates" id="confirm-line-candidates"></div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="tiebreak-modal">
-  <div class="modal">
-    <p class="modal-title" id="tiebreak-title">Ничья на уровне</p>
-    <p class="modal-text" id="tiebreak-text">Несколько билетов закрыли уровень одновременно. Проведи мини-испытание и выбери победителя.</p>
-    <div class="tiebreak-candidates" id="tiebreak-candidates"></div>
+  <div class="modal modal-wide">
+    <p class="modal-title" id="tiebreak-title">Ничья</p>
+    <p class="modal-text">Ведущий определяет победителя мини-игрой. Нажми на карту, которая выиграла.</p>
+    <div class="confirm-candidates" id="tiebreak-candidates"></div>
   </div>
 </div>
 

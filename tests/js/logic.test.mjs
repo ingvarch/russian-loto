@@ -14,8 +14,11 @@ import {
   closeCards,
   closeCountsByLevel,
   computePayouts,
+  hasPendingEvents,
   isCardClose,
   levelOf,
+  nextPendingBatch,
+  nextTiebreakBatch,
   resolveLevel,
   rowHits,
   winnersByLevel,
@@ -190,87 +193,152 @@ test("winnersByLevel: empty events -> nulls", () => {
   assert.deepEqual(winnersByLevel([]), { 1: null, 2: null, 3: null });
 });
 
-test("winnersByLevel: first-to-reach per level", () => {
+test("winnersByLevel: first-to-reach per level (confirmed only)", () => {
   const events = [
-    { cid: "c", seq: 3, level: 1, callCount: 20 },
-    { cid: "b", seq: 2, level: 1, callCount: 15 },
-    { cid: "a", seq: 1, level: 2, callCount: 22 },
+    { cid: "c", seq: 3, level: 1, callCount: 20, status: "confirmed" },
+    { cid: "b", seq: 2, level: 1, callCount: 15, status: "confirmed" },
+    { cid: "a", seq: 1, level: 2, callCount: 22, status: "confirmed" },
   ];
   const w = winnersByLevel(events);
-  assert.deepEqual(w[1], { seq: 2, cid: "b" });   // earliest callCount
+  assert.deepEqual(w[1], { seq: 2, cid: "b" });
   assert.deepEqual(w[2], { seq: 1, cid: "a" });
   assert.equal(w[3], null);
 });
 
 test("winnersByLevel: ties on callCount resolve to lowest seq", () => {
   const events = [
-    { cid: "x", seq: 7, level: 1, callCount: 10 },
-    { cid: "y", seq: 3, level: 1, callCount: 10 },
-    { cid: "z", seq: 9, level: 1, callCount: 10 },
+    { cid: "x", seq: 7, level: 1, callCount: 10, status: "confirmed" },
+    { cid: "y", seq: 3, level: 1, callCount: 10, status: "confirmed" },
+    { cid: "z", seq: 9, level: 1, callCount: 10, status: "confirmed" },
   ];
   assert.deepEqual(winnersByLevel(events)[1], { seq: 3, cid: "y" });
+});
+
+test("winnersByLevel: absent events are skipped, confirmed at higher callCount wins", () => {
+  const events = [
+    { cid: "a", seq: 1, level: 1, callCount: 10, status: "absent" },
+    { cid: "b", seq: 2, level: 1, callCount: 15, status: "confirmed" },
+  ];
+  assert.deepEqual(winnersByLevel(events)[1], { seq: 2, cid: "b" });
+});
+
+test("winnersByLevel: pending events are skipped (no winner yet)", () => {
+  const events = [
+    { cid: "a", seq: 1, level: 1, callCount: 10, status: "pending" },
+  ];
+  assert.equal(winnersByLevel(events)[1], null);
+});
+
+test("winnersByLevel: legacy events with no status field count as confirmed", () => {
+  const events = [{ cid: "a", seq: 1, level: 1, callCount: 10 }];
+  assert.deepEqual(winnersByLevel(events)[1], { seq: 1, cid: "a" });
+});
+
+
+// ---- nextPendingBatch / hasPendingEvents ---------------------------------
+
+test("nextPendingBatch: null when nothing pending", () => {
+  const state = { events: [{ cid: "a", seq: 1, level: 1, callCount: 5, status: "confirmed" }] };
+  assert.equal(nextPendingBatch(state, [{ cid: "a", seq: 1 }]), null);
+});
+
+test("nextPendingBatch: returns the lowest-level earliest pending batch", () => {
+  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 2, callCount: 20, status: "pending" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "pending" },
+    ],
+  };
+  const batch = nextPendingBatch(state, cards);
+  assert.equal(batch.level, 1);
+  assert.equal(batch.callCount, 10);
+  assert.equal(batch.candidates.length, 1);
+  assert.equal(batch.candidates[0].card.cid, "b");
+});
+
+test("nextPendingBatch: groups simultaneous pending events (same level + callCount)", () => {
+  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }, { cid: "c", seq: 3 }];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "pending" },
+      { cid: "c", seq: 3, level: 1, callCount: 10, status: "pending" },
+      { cid: "b", seq: 2, level: 1, callCount: 11, status: "pending" },
+    ],
+  };
+  const batch = nextPendingBatch(state, cards);
+  assert.equal(batch.level, 1);
+  assert.equal(batch.callCount, 10);
+  // Two simultaneous candidates, sorted by seq
+  assert.deepEqual(batch.candidates.map((p) => p.card.seq), [1, 3]);
+});
+
+test("hasPendingEvents: true iff any event is pending", () => {
+  assert.equal(hasPendingEvents({ events: [] }), false);
+  assert.equal(hasPendingEvents({ events: [{ status: "confirmed" }, { status: "absent" }] }), false);
+  assert.equal(hasPendingEvents({ events: [{ status: "pending" }] }), true);
 });
 
 
 // ---- resolveLevel --------------------------------------------------------
 
 test("resolveLevel: no events -> unclaimed", () => {
-  const state = { events: [], split: true, tiebreakResolutions: {} };
+  const state = { events: [], split: true };
   assert.deepEqual(resolveLevel(state, [], 1), { status: "unclaimed" });
 });
 
-test("resolveLevel: split=true with tie -> both decided as winners", () => {
+test("resolveLevel: pending events are invisible to the resolver", () => {
+  const state = {
+    events: [{ cid: "a", seq: 1, level: 1, callCount: 10, status: "pending" }],
+    split: true,
+  };
+  assert.equal(resolveLevel(state, [{ cid: "a", seq: 1 }], 1).status, "unclaimed");
+});
+
+test("resolveLevel: absent events are skipped, later confirmed event wins", () => {
   const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
   const state = {
     events: [
-      { cid: "a", seq: 1, level: 1, callCount: 10 },
-      { cid: "b", seq: 2, level: 1, callCount: 10 },
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "absent" },
+      { cid: "b", seq: 2, level: 1, callCount: 15, status: "confirmed" },
     ],
     split: true,
-    tiebreakResolutions: {},
-  };
-  const r = resolveLevel(state, cards, 1);
-  assert.equal(r.status, "decided");
-  assert.equal(r.winners.length, 2);
-  assert.deepEqual(r.winners.map((c) => c.cid), ["a", "b"]);
-});
-
-test("resolveLevel: split=false with tie and no resolution -> pending", () => {
-  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
-  const state = {
-    events: [
-      { cid: "a", seq: 1, level: 1, callCount: 10 },
-      { cid: "b", seq: 2, level: 1, callCount: 10 },
-    ],
-    split: false,
-    tiebreakResolutions: {},
-  };
-  const r = resolveLevel(state, cards, 1);
-  assert.equal(r.status, "pending");
-  assert.equal(r.tiebreakKey, "1-10");
-  assert.equal(r.candidates.length, 2);
-});
-
-test("resolveLevel: split=false with tie and resolution -> decided", () => {
-  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
-  const state = {
-    events: [
-      { cid: "a", seq: 1, level: 1, callCount: 10 },
-      { cid: "b", seq: 2, level: 1, callCount: 10 },
-    ],
-    split: false,
-    tiebreakResolutions: { "1-10": "b" },
   };
   const r = resolveLevel(state, cards, 1);
   assert.equal(r.status, "decided");
   assert.deepEqual(r.winners.map((c) => c.cid), ["b"]);
 });
 
+test("resolveLevel: multiple confirmed at same callCount -> all tied winners", () => {
+  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "confirmed" },
+    ],
+    split: true,
+  };
+  const r = resolveLevel(state, cards, 1);
+  assert.equal(r.status, "decided");
+  assert.deepEqual(r.winners.map((c) => c.cid), ["a", "b"]);
+});
+
+test("resolveLevel: legacy events (no status) are treated as confirmed", () => {
+  const cards = [{ cid: "a", seq: 1 }];
+  const state = {
+    events: [{ cid: "a", seq: 1, level: 1, callCount: 10 }],
+    split: true,
+  };
+  const r = resolveLevel(state, cards, 1);
+  assert.equal(r.status, "decided");
+  assert.equal(r.winners[0].cid, "a");
+});
+
 
 // ---- computePayouts ------------------------------------------------------
 
 test("computePayouts: jackpot 0 -> disabled", () => {
-  const state = { jackpot: 0, percentages: [10, 25, 65], events: [], split: true, tiebreakResolutions: {} };
+  const state = { jackpot: 0, percentages: [10, 25, 65], events: [], split: true };
   assert.deepEqual(computePayouts(state, []), { status: "disabled" });
 });
 
@@ -280,7 +348,6 @@ test("computePayouts: bases sum to jackpot regardless of rounding", () => {
     percentages: [10, 25, 65],
     events: [],
     split: true,
-    tiebreakResolutions: {},
   };
   const out = computePayouts(state, []);
   assert.equal(out.status, "active");
@@ -294,12 +361,11 @@ test("computePayouts: level-3 winner gets remainder when winners.length==1", () 
     jackpot: 100,
     percentages: [10, 25, 65],
     events: [
-      { cid: "a", seq: 1, level: 1, callCount: 5 },
-      { cid: "a", seq: 1, level: 2, callCount: 10 },
-      { cid: "a", seq: 1, level: 3, callCount: 15 },
+      { cid: "a", seq: 1, level: 1, callCount: 5, status: "confirmed" },
+      { cid: "a", seq: 1, level: 2, callCount: 10, status: "confirmed" },
+      { cid: "a", seq: 1, level: 3, callCount: 15, status: "confirmed" },
     ],
     split: true,
-    tiebreakResolutions: {},
   };
   const out = computePayouts(state, cards);
   assert.equal(out.level3.status, "paid");
@@ -307,20 +373,252 @@ test("computePayouts: level-3 winner gets remainder when winners.length==1", () 
   assert.equal(out.level3.remainder, 0);  // one winner, perPerson === base
 });
 
-test("computePayouts: pending tiebreak at level 1 blocks other level resolutions", () => {
+test("computePayouts: pending events leave levels unclaimed", () => {
+  const cards = [{ cid: "a", seq: 1 }];
+  const state = {
+    jackpot: 100,
+    percentages: [10, 25, 65],
+    events: [{ cid: "a", seq: 1, level: 1, callCount: 10, status: "pending" }],
+    split: true,
+  };
+  const out = computePayouts(state, cards);
+  assert.equal(out.level1.status, "unclaimed");
+});
+
+
+// ---- Tiebreak (split=false) ---------------------------------------------
+
+test("resolveLevel: split=true, multiple confirmed ties -> all winners (shared)", () => {
+  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "confirmed" },
+    ],
+    split: true,
+  };
+  const r = resolveLevel(state, cards, 1);
+  assert.equal(r.status, "decided");
+  assert.deepEqual(r.winners.map((c) => c.cid), ["a", "b"]);
+});
+
+test("resolveLevel: split=false, single confirmed -> decided with one winner (no tiebreak)", () => {
+  const cards = [{ cid: "a", seq: 1 }];
+  const state = {
+    events: [{ cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" }],
+    split: false,
+  };
+  const r = resolveLevel(state, cards, 1);
+  assert.equal(r.status, "decided");
+  assert.deepEqual(r.winners.map((c) => c.cid), ["a"]);
+});
+
+test("resolveLevel: split=false, multiple confirmed ties, no pick -> pending-tiebreak", () => {
+  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "confirmed" },
+    ],
+    split: false,
+    tiebreakWinners: {},
+  };
+  const r = resolveLevel(state, cards, 1);
+  assert.equal(r.status, "pending-tiebreak");
+  assert.equal(r.level, 1);
+  assert.equal(r.callCount, 10);
+  assert.deepEqual(r.candidates.map((c) => c.cid), ["a", "b"]);
+});
+
+test("resolveLevel: split=false, tie with tiebreakWinner set -> decided with the picked card", () => {
+  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "confirmed" },
+    ],
+    split: false,
+    tiebreakWinners: { "1:10": "b" },
+  };
+  const r = resolveLevel(state, cards, 1);
+  assert.equal(r.status, "decided");
+  assert.deepEqual(r.winners.map((c) => c.cid), ["b"]);
+});
+
+test("resolveLevel: split=false, tiebreakWinner with unknown cid -> pending-tiebreak", () => {
+  // Defensive: a tiebreak entry pointing at a card not among candidates
+  // should not silently promote the remaining candidates. Stay pending.
+  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "confirmed" },
+    ],
+    split: false,
+    tiebreakWinners: { "1:10": "nonsense-cid" },
+  };
+  const r = resolveLevel(state, cards, 1);
+  assert.equal(r.status, "pending-tiebreak");
+});
+
+
+// ---- nextTiebreakBatch --------------------------------------------------
+
+test("nextTiebreakBatch: null when split=true (ties are shared, no pick needed)", () => {
+  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "confirmed" },
+    ],
+    split: true,
+    tiebreakWinners: {},
+  };
+  assert.equal(nextTiebreakBatch(state, cards), null);
+});
+
+test("nextTiebreakBatch: null when only one confirmed at level (no tie)", () => {
+  const cards = [{ cid: "a", seq: 1 }];
+  const state = {
+    events: [{ cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" }],
+    split: false,
+    tiebreakWinners: {},
+  };
+  assert.equal(nextTiebreakBatch(state, cards), null);
+});
+
+test("nextTiebreakBatch: returns unresolved tie (lowest level first)", () => {
+  const cards = [
+    { cid: "a", seq: 1 }, { cid: "b", seq: 2 },
+    { cid: "c", seq: 3 }, { cid: "d", seq: 4 },
+  ];
+  const state = {
+    events: [
+      { cid: "c", seq: 3, level: 2, callCount: 20, status: "confirmed" },
+      { cid: "d", seq: 4, level: 2, callCount: 20, status: "confirmed" },
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "confirmed" },
+    ],
+    split: false,
+    tiebreakWinners: {},
+  };
+  const batch = nextTiebreakBatch(state, cards);
+  assert.equal(batch.level, 1);
+  assert.equal(batch.callCount, 10);
+  assert.deepEqual(batch.candidates.map((c) => c.cid), ["a", "b"]);
+});
+
+test("nextTiebreakBatch: skips levels already resolved via tiebreakWinners", () => {
+  const cards = [
+    { cid: "a", seq: 1 }, { cid: "b", seq: 2 },
+    { cid: "c", seq: 3 }, { cid: "d", seq: 4 },
+  ];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "c", seq: 3, level: 2, callCount: 20, status: "confirmed" },
+      { cid: "d", seq: 4, level: 2, callCount: 20, status: "confirmed" },
+    ],
+    split: false,
+    tiebreakWinners: { "1:10": "a" },
+  };
+  const batch = nextTiebreakBatch(state, cards);
+  assert.equal(batch.level, 2);
+  assert.equal(batch.callCount, 20);
+});
+
+test("nextTiebreakBatch: pending events do not trigger a tiebreak", () => {
+  // Until both candidates are "confirmed", there is no tie to break.
+  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "pending" },
+    ],
+    split: false,
+    tiebreakWinners: {},
+  };
+  assert.equal(nextTiebreakBatch(state, cards), null);
+});
+
+test("nextTiebreakBatch: defers when a third candidate in the same batch is still pending", () => {
+  // Three cards tied the level simultaneously; the admin has confirmed
+  // two but not yet answered about the third. The tiebreak must wait --
+  // otherwise the host is asked to pick a winner among 2 cards while a
+  // third candidate is still on the table.
+  const cards = [
+    { cid: "a", seq: 1 }, { cid: "b", seq: 2 }, { cid: "c", seq: 3 },
+  ];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 2, callCount: 20, status: "confirmed" },
+      { cid: "b", seq: 2, level: 2, callCount: 20, status: "confirmed" },
+      { cid: "c", seq: 3, level: 2, callCount: 20, status: "pending" },
+    ],
+    split: false,
+    tiebreakWinners: {},
+  };
+  assert.equal(nextTiebreakBatch(state, cards), null);
+});
+
+test("nextTiebreakBatch: fires once every candidate is resolved (even if some went absent)", () => {
+  // Three-way tie, admin confirms two and marks the third absent. The
+  // batch is now finalized and the host picks between the two confirmed.
+  const cards = [
+    { cid: "a", seq: 1 }, { cid: "b", seq: 2 }, { cid: "c", seq: 3 },
+  ];
+  const state = {
+    events: [
+      { cid: "a", seq: 1, level: 2, callCount: 20, status: "confirmed" },
+      { cid: "b", seq: 2, level: 2, callCount: 20, status: "confirmed" },
+      { cid: "c", seq: 3, level: 2, callCount: 20, status: "absent" },
+    ],
+    split: false,
+    tiebreakWinners: {},
+  };
+  const batch = nextTiebreakBatch(state, cards);
+  assert.ok(batch, "expected a tiebreak batch");
+  assert.equal(batch.level, 2);
+  assert.deepEqual(batch.candidates.map((c) => c.cid), ["a", "b"]);
+});
+
+
+// ---- computePayouts with tiebreak ---------------------------------------
+
+test("computePayouts: split=false with unresolved tie -> level is pending-tiebreak", () => {
   const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
   const state = {
     jackpot: 100,
     percentages: [10, 25, 65],
     events: [
-      { cid: "a", seq: 1, level: 1, callCount: 10 },
-      { cid: "b", seq: 2, level: 1, callCount: 10 },
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "confirmed" },
     ],
     split: false,
-    tiebreakResolutions: {},
+    tiebreakWinners: {},
   };
   const out = computePayouts(state, cards);
-  assert.equal(out.level1.status, "pending");
-  assert.equal(out.level1.candidates.length, 2);
-  assert.equal(out.level1.tiebreakKey, "1-10");
+  assert.equal(out.level1.status, "pending-tiebreak");
+  // base is still reserved so the UI can show how much is at stake
+  assert.equal(out.level1.base, 10);
+});
+
+test("computePayouts: split=false with resolved tie -> single winner gets full base", () => {
+  const cards = [{ cid: "a", seq: 1 }, { cid: "b", seq: 2 }];
+  const state = {
+    jackpot: 100,
+    percentages: [10, 25, 65],
+    events: [
+      { cid: "a", seq: 1, level: 1, callCount: 10, status: "confirmed" },
+      { cid: "b", seq: 2, level: 1, callCount: 10, status: "confirmed" },
+    ],
+    split: false,
+    tiebreakWinners: { "1:10": "b" },
+  };
+  const out = computePayouts(state, cards);
+  assert.equal(out.level1.status, "paid");
+  assert.equal(out.level1.winners.length, 1);
+  assert.equal(out.level1.winners[0].cid, "b");
+  assert.equal(out.level1.perPerson, 10);
 });

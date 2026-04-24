@@ -57,6 +57,10 @@ export function closeCards(cards, called) {
   return cards.filter((card) => isCardClose(card, called));
 }
 
+export function tiebreakKey(level, callCount) {
+  return level + ":" + callCount;
+}
+
 // Stage-2-ready: categorize "close" cards by which level they would reach
 // next. A card at current level L with an unclosed 4/5 row is close to L+1.
 // Level-3 cards are skipped (no further level to reach).
@@ -73,13 +77,17 @@ export function closeCountsByLevel(cards, called) {
   return counts;
 }
 
-// Stage-2-ready: which card first crossed each level? Events are stored
-// newest-first. For ties on callCount, falls back to lowest seq.
+// First confirmed winner per level, used by the /display page. Events with
+// status "pending" or "absent" are skipped -- we only surface cards that
+// the admin has confirmed are actually playing. For ties on callCount,
+// falls back to lowest seq.
 // Returns { 1: {seq, cid}|null, 2: ..., 3: ... }.
 export function winnersByLevel(events) {
   const out = { 1: null, 2: null, 3: null };
   for (const lvl of [1, 2, 3]) {
-    const filtered = events.filter((e) => e.level === lvl);
+    const filtered = (events || []).filter(
+      (e) => e.level === lvl && (e.status === undefined || e.status === "confirmed"),
+    );
     if (filtered.length === 0) continue;
     let minCall = Infinity;
     for (const e of filtered) {
@@ -96,14 +104,27 @@ export function winnersByLevel(events) {
 
 // ---- Jackpot / payouts ----
 //
-// Resolve who won a given level (if anyone). Shared between the payout
-// calculation and any UI that needs to know the winner regardless of money.
+// Each event in state.events has a status: "pending" | "confirmed" | "absent".
+// A level is won by the first card whose event is confirmed (lowest callCount
+// among confirmed events at that level). Pending and absent events do not
+// count toward winning but are still logged: absent events are informational
+// ("card X closed first, but wasn't in play"), pending events are a signal
+// the UI must show a confirmation modal and block further play.
+//
 // Returns one of:
-//   { status: "unclaimed" }                                     -- no events yet
-//   { status: "pending", candidates, tiebreakKey }              -- tied + split=off + no resolution
-//   { status: "decided", winners }                              -- one unique winner, or split tie, or resolved
+//   { status: "unclaimed" }                     -- no confirmed events yet
+//   { status: "decided", winners }              -- one or more confirmed at the
+//                                                  earliest callCount; with
+//                                                  split=true all ties share,
+//                                                  with split=false + tiebreak
+//                                                  resolved only the picked
+//                                                  card is a winner
+//   { status: "pending-tiebreak",               -- split=false and >1 confirmed
+//     level, callCount, candidates }              tied; host must pick one
 export function resolveLevel(state, cards, level) {
-  const events = (state.events || []).filter((e) => e.level === level);
+  const events = (state.events || []).filter(
+    (e) => e.level === level && (e.status === undefined || e.status === "confirmed"),
+  );
   if (events.length === 0) return { status: "unclaimed" };
 
   let minCall = Infinity;
@@ -115,25 +136,86 @@ export function resolveLevel(state, cards, level) {
     (e) => (e.callCount === undefined ? Infinity : e.callCount) === minCall,
   );
   const resolveCard = (cid) => cards.find((c) => c.cid === cid);
+  const winners = firstEvents.map((e) => resolveCard(e.cid)).filter(Boolean);
+  if (winners.length === 0) return { status: "unclaimed" };
 
-  if (firstEvents.length === 1 || state.split) {
-    const winners = firstEvents.map((e) => resolveCard(e.cid)).filter(Boolean);
-    if (winners.length === 0) return { status: "unclaimed" };
-    return { status: "decided", winners: winners.slice().sort((a, b) => a.seq - b.seq) };
-  }
+  winners.sort((a, b) => a.seq - b.seq);
 
-  const key = level + "-" + minCall;
-  const resolvedCid = (state.tiebreakResolutions || {})[key];
-  if (!resolvedCid) {
-    const candidates = firstEvents.map((e) => resolveCard(e.cid)).filter(Boolean);
+  // Split=false with a multi-card tie: the host picks one winner via a mini
+  // game. The pick is recorded in state.tiebreakWinners; until it's set, the
+  // level stays in "pending-tiebreak" and the UI shows the picker modal.
+  if (winners.length > 1 && state.split === false) {
+    const tiebreakWinners = state.tiebreakWinners || {};
+    const pickedCid = tiebreakWinners[tiebreakKey(level, minCall)];
+    if (pickedCid) {
+      const picked = winners.find((c) => c.cid === pickedCid);
+      if (picked) return { status: "decided", winners: [picked] };
+      // Pick references an unknown card -- treat as unresolved so the UI can
+      // re-prompt rather than silently award the remaining candidates.
+    }
     return {
-      status: "pending",
-      candidates: candidates.slice().sort((a, b) => a.seq - b.seq),
-      tiebreakKey: key,
+      status: "pending-tiebreak",
+      level,
+      callCount: minCall,
+      candidates: winners,
     };
   }
-  const winner = resolveCard(resolvedCid);
-  return { status: "decided", winners: winner ? [winner] : [] };
+  return { status: "decided", winners };
+}
+
+// Returns the next unresolved split=false tie the UI should ask the host to
+// pick a winner for. Lowest level first, then earliest callCount. Returns
+// null if no tie needs a pick.
+//
+// Defers while any pending event remains at the same level+callCount as the
+// candidate batch: the admin must first say yes/no for every candidate so
+// the set of winners is final. Firing the picker earlier would ask the host
+// to choose among N cards while an (N+1)-th is still on the table.
+export function nextTiebreakBatch(state, cards) {
+  if (state.split !== false) return null;
+  for (const level of [1, 2, 3]) {
+    const r = resolveLevel(state, cards, level);
+    if (r.status !== "pending-tiebreak") continue;
+    const samePending = (state.events || []).some(
+      (e) => e.status === "pending" && e.level === level && e.callCount === r.callCount,
+    );
+    if (samePending) continue;
+    return { level: r.level, callCount: r.callCount, candidates: r.candidates };
+  }
+  return null;
+}
+
+// Returns pending events grouped by (level, callCount). Each group is a
+// batch that crossed a level simultaneously and must be confirmed together.
+// Returns at most one group (the lowest-level, earliest-callCount batch) so
+// the UI shows one modal at a time. Returns null if nothing is pending.
+export function nextPendingBatch(state, cards) {
+  const pending = (state.events || []).filter((e) => e.status === "pending");
+  if (pending.length === 0) return null;
+  const resolveCard = (cid) => cards.find((c) => c.cid === cid);
+
+  // Sort by level asc, then callCount asc — we want the earliest crossing at
+  // the lowest level to be resolved first.
+  pending.sort((a, b) => {
+    if (a.level !== b.level) return a.level - b.level;
+    const ac = a.callCount === undefined ? Infinity : a.callCount;
+    const bc = b.callCount === undefined ? Infinity : b.callCount;
+    return ac - bc;
+  });
+  const head = pending[0];
+  const batch = pending.filter(
+    (e) => e.level === head.level && e.callCount === head.callCount,
+  );
+  const candidates = batch
+    .map((e) => ({ event: e, card: resolveCard(e.cid) }))
+    .filter((p) => p.card)
+    .sort((a, b) => a.card.seq - b.card.seq);
+  if (candidates.length === 0) return null;
+  return { level: head.level, callCount: head.callCount, candidates };
+}
+
+export function hasPendingEvents(state) {
+  return (state.events || []).some((e) => e.status === "pending");
 }
 
 export function computeLevelPayout(state, cards, level, base, absorbFinalRemainder) {
@@ -141,12 +223,13 @@ export function computeLevelPayout(state, cards, level, base, absorbFinalRemaind
   if (resolved.status === "unclaimed") {
     return { status: "unclaimed", base };
   }
-  if (resolved.status === "pending") {
+  if (resolved.status === "pending-tiebreak") {
     return {
-      status: "pending",
+      status: "pending-tiebreak",
       base,
+      level: resolved.level,
+      callCount: resolved.callCount,
       candidates: resolved.candidates,
-      tiebreakKey: resolved.tiebreakKey,
     };
   }
   const winnerCards = resolved.winners;

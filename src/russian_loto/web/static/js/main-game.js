@@ -19,4 +19,12 @@ const SERVER_RANGE = JSON.parse(document.getElementById("server-range").textCont
 const initialState = state.loadState()
   || state.freshState({ cardRange: SERVER_RANGE });
 
-ui.init({ cards: CARDS, initialState });
+function pushToServer(s) {
+  fetch("/api/state", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(s),
+  }).catch(() => {});
+}
+
+ui.init({ cards: CARDS, initialState, onSave: pushToServer });
